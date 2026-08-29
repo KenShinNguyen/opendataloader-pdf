@@ -4,14 +4,15 @@
 """
 Auto-generated convert function for opendataloader-pdf.
 """
+from os import PathLike
 from typing import List, Optional, Union
 
 from .runner import run_jar
 
 
 def convert(
-    input_path: Union[str, List[str]],
-    output_dir: Optional[str] = None,
+    input_path: Union[str, PathLike, List[Union[str, PathLike]]],
+    output_dir: Optional[Union[str, PathLike]] = None,
     password: Optional[str] = None,
     format: Optional[Union[str, List[str]]] = None,
     quiet: bool = False,
@@ -28,22 +29,22 @@ def convert(
     html_page_separator: Optional[str] = None,
     image_output: Optional[str] = None,
     image_format: Optional[str] = None,
-    image_dir: Optional[str] = None,
+    image_dir: Optional[Union[str, PathLike]] = None,
     pages: Optional[str] = None,
     include_header_footer: bool = False,
     detect_strikethrough: bool = False,
     hybrid: Optional[str] = None,
     hybrid_mode: Optional[str] = None,
     hybrid_url: Optional[str] = None,
-    hybrid_timeout: Optional[str] = None,
+    hybrid_timeout: Optional[Union[int, str]] = None,
     hybrid_fallback: bool = False,
     hybrid_hancom_ai_regionlist_strategy: Optional[str] = None,
     hybrid_hancom_ai_ocr_strategy: Optional[str] = None,
     hybrid_hancom_ai_image_cache: Optional[str] = None,
     to_stdout: bool = False,
-    threads: Optional[str] = None,
-    image_resolution: Optional[str] = None,
-    space_ratio: Optional[str] = None,
+    threads: Optional[Union[int, str]] = None,
+    image_resolution: Optional[Union[float, int, str]] = None,
+    space_ratio: Optional[Union[float, int, str]] = None,
 ) -> None:
     """
     Convert PDF(s) into the requested output format(s).
@@ -86,85 +87,85 @@ def convert(
     """
     args: List[str] = []
 
-    # Build input paths
-    if isinstance(input_path, list):
-        args.extend(input_path)
+    # Build input paths (str() so pathlib.Path inputs work too)
+    if isinstance(input_path, (list, tuple)):
+        args.extend(str(p) for p in input_path)
     else:
-        args.append(input_path)
+        args.append(str(input_path))
 
-    if output_dir:
-        args.extend(["--output-dir", output_dir])
-    if password:
-        args.extend(["--password", password])
-    if format:
-        if isinstance(format, list):
+    if output_dir is not None:
+        args.extend(["--output-dir", str(output_dir)])
+    if password is not None:
+        args.extend(["--password", str(password)])
+    if format is not None:
+        if isinstance(format, (list, tuple)):
             if format:
-                args.extend(["--format", ",".join(format)])
+                args.extend(["--format", ",".join(str(v) for v in format)])
         else:
-            args.extend(["--format", format])
+            args.extend(["--format", str(format)])
     if quiet:
         args.append("--quiet")
-    if content_safety_off:
-        if isinstance(content_safety_off, list):
+    if content_safety_off is not None:
+        if isinstance(content_safety_off, (list, tuple)):
             if content_safety_off:
-                args.extend(["--content-safety-off", ",".join(content_safety_off)])
+                args.extend(["--content-safety-off", ",".join(str(v) for v in content_safety_off)])
         else:
-            args.extend(["--content-safety-off", content_safety_off])
+            args.extend(["--content-safety-off", str(content_safety_off)])
     if sanitize:
         args.append("--sanitize")
     if keep_line_breaks:
         args.append("--keep-line-breaks")
-    if replace_invalid_chars:
-        args.extend(["--replace-invalid-chars", replace_invalid_chars])
+    if replace_invalid_chars is not None:
+        args.extend(["--replace-invalid-chars", str(replace_invalid_chars)])
     if use_struct_tree:
         args.append("--use-struct-tree")
-    if table_method:
-        args.extend(["--table-method", table_method])
-    if reading_order:
-        args.extend(["--reading-order", reading_order])
-    if markdown_page_separator:
-        args.extend(["--markdown-page-separator", markdown_page_separator])
+    if table_method is not None:
+        args.extend(["--table-method", str(table_method)])
+    if reading_order is not None:
+        args.extend(["--reading-order", str(reading_order)])
+    if markdown_page_separator is not None:
+        args.extend(["--markdown-page-separator", str(markdown_page_separator)])
     if markdown_with_html:
         args.append("--markdown-with-html")
-    if text_page_separator:
-        args.extend(["--text-page-separator", text_page_separator])
-    if html_page_separator:
-        args.extend(["--html-page-separator", html_page_separator])
-    if image_output:
-        args.extend(["--image-output", image_output])
-    if image_format:
-        args.extend(["--image-format", image_format])
-    if image_dir:
-        args.extend(["--image-dir", image_dir])
-    if pages:
-        args.extend(["--pages", pages])
+    if text_page_separator is not None:
+        args.extend(["--text-page-separator", str(text_page_separator)])
+    if html_page_separator is not None:
+        args.extend(["--html-page-separator", str(html_page_separator)])
+    if image_output is not None:
+        args.extend(["--image-output", str(image_output)])
+    if image_format is not None:
+        args.extend(["--image-format", str(image_format)])
+    if image_dir is not None:
+        args.extend(["--image-dir", str(image_dir)])
+    if pages is not None:
+        args.extend(["--pages", str(pages)])
     if include_header_footer:
         args.append("--include-header-footer")
     if detect_strikethrough:
         args.append("--detect-strikethrough")
-    if hybrid:
-        args.extend(["--hybrid", hybrid])
-    if hybrid_mode:
-        args.extend(["--hybrid-mode", hybrid_mode])
-    if hybrid_url:
-        args.extend(["--hybrid-url", hybrid_url])
-    if hybrid_timeout:
-        args.extend(["--hybrid-timeout", hybrid_timeout])
+    if hybrid is not None:
+        args.extend(["--hybrid", str(hybrid)])
+    if hybrid_mode is not None:
+        args.extend(["--hybrid-mode", str(hybrid_mode)])
+    if hybrid_url is not None:
+        args.extend(["--hybrid-url", str(hybrid_url)])
+    if hybrid_timeout is not None:
+        args.extend(["--hybrid-timeout", str(hybrid_timeout)])
     if hybrid_fallback:
         args.append("--hybrid-fallback")
-    if hybrid_hancom_ai_regionlist_strategy:
-        args.extend(["--hybrid-hancom-ai-regionlist-strategy", hybrid_hancom_ai_regionlist_strategy])
-    if hybrid_hancom_ai_ocr_strategy:
-        args.extend(["--hybrid-hancom-ai-ocr-strategy", hybrid_hancom_ai_ocr_strategy])
-    if hybrid_hancom_ai_image_cache:
-        args.extend(["--hybrid-hancom-ai-image-cache", hybrid_hancom_ai_image_cache])
+    if hybrid_hancom_ai_regionlist_strategy is not None:
+        args.extend(["--hybrid-hancom-ai-regionlist-strategy", str(hybrid_hancom_ai_regionlist_strategy)])
+    if hybrid_hancom_ai_ocr_strategy is not None:
+        args.extend(["--hybrid-hancom-ai-ocr-strategy", str(hybrid_hancom_ai_ocr_strategy)])
+    if hybrid_hancom_ai_image_cache is not None:
+        args.extend(["--hybrid-hancom-ai-image-cache", str(hybrid_hancom_ai_image_cache)])
     if to_stdout:
         args.append("--to-stdout")
-    if threads:
-        args.extend(["--threads", threads])
-    if image_resolution:
-        args.extend(["--image-resolution", image_resolution])
-    if space_ratio:
-        args.extend(["--space-ratio", space_ratio])
+    if threads is not None:
+        args.extend(["--threads", str(threads)])
+    if image_resolution is not None:
+        args.extend(["--image-resolution", str(image_resolution)])
+    if space_ratio is not None:
+        args.extend(["--space-ratio", str(space_ratio)])
 
     run_jar(args, quiet)
