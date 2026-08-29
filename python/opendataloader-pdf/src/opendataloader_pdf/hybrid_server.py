@@ -110,6 +110,45 @@ def _non_negative_int(value: str) -> int:
     return parsed
 
 
+# "START-END", both 1-based and inclusive. Anchored so trailing junk cannot
+# sneak through, and so a leading "-" (i.e. a negative start) fails to match.
+_PAGE_RANGE_RE = re.compile(r"^\s*(\d+)\s*-\s*(\d+)\s*$")
+
+
+def parse_page_ranges(value: Optional[str]) -> Optional[tuple]:
+    """Parse a "START-END" page range into a 1-based inclusive tuple.
+
+    Returns None when no range was asked for (absent or blank).
+
+    Raises ValueError when a range *was* given but cannot be honoured. That
+    matters: the previous code swallowed every malformed value and fell back
+    to converting the whole document, so a typo like "1-" or "abc" silently
+    processed far more than the caller asked for, and a reversed "20-10" was
+    handed to the converter as-is.
+    """
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+
+    match = _PAGE_RANGE_RE.match(text)
+    if match is None:
+        raise ValueError(
+            f"Invalid page_ranges {value!r}: expected START-END with two "
+            'positive page numbers, e.g. "1-5"'
+        )
+
+    start, end = int(match.group(1)), int(match.group(2))
+    if start < 1:
+        raise ValueError(
+            f"Invalid page_ranges {value!r}: pages are 1-based, so START must be >= 1"
+        )
+    if start > end:
+        raise ValueError(f"Invalid page_ranges {value!r}: START must be <= END")
+    return (start, end)
+
+
 class UploadTooLargeError(Exception):
     """Raised when a streamed upload exceeds the configured size cap."""
 
@@ -681,15 +720,14 @@ def create_app(
                 status_code=503,
             )
 
-        # Parse page_ranges string to tuple
-        page_range_tuple = None
-        if page_ranges:
-            try:
-                parts = page_ranges.split("-")
-                if len(parts) == 2:
-                    page_range_tuple = (int(parts[0]), int(parts[1]))
-            except ValueError:
-                pass
+        # Reject a malformed range instead of silently converting everything.
+        try:
+            page_range_tuple = parse_page_ranges(page_ranges)
+        except ValueError as err:
+            return JSONResponse(
+                {"status": "failure", "errors": [str(err)]},
+                status_code=400,
+            )
 
         # Stream upload to temp file and enforce size incrementally. The helper
         # cleans up the partial file itself if the body fails or the cap is hit.
