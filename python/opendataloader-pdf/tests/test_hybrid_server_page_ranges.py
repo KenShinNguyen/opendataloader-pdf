@@ -7,34 +7,9 @@ PDF processed instead of the pages they wanted, and a reversed "20-10" was
 handed straight to the converter. Both now fail loudly with a 400.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-
-
-@pytest.fixture
-def hybrid_server_module():
-    """Import hybrid_server with docling stubbed out."""
-    import importlib
-
-    with patch.dict(
-        "sys.modules",
-        {
-            "docling": MagicMock(),
-            "docling.datamodel": MagicMock(),
-            "docling.datamodel.accelerator_options": MagicMock(),
-            "docling.datamodel.base_models": MagicMock(),
-            "docling.datamodel.pipeline_options": MagicMock(),
-            "docling.document_converter": MagicMock(),
-            "docling.models": MagicMock(),
-            "docling.models.factories": MagicMock(),
-            "uvicorn": MagicMock(),
-        },
-    ):
-        from opendataloader_pdf import hybrid_server
-
-        importlib.reload(hybrid_server)
-        yield hybrid_server
 
 
 @pytest.mark.parametrize(

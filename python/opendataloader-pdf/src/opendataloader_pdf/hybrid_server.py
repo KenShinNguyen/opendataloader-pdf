@@ -115,6 +115,29 @@ def _non_negative_int(value: str) -> int:
 _PAGE_RANGE_RE = re.compile(r"^\s*(\d+)\s*-\s*(\d+)\s*$")
 
 
+def warn_if_publicly_bound(host: str, max_file_size_bytes: int) -> None:
+    """Log what a non-loopback bind exposes.
+
+    Kept out of main() so it can be exercised without starting the server:
+    main() also configures logging, probes the OCR engine and imports torch to
+    detect an accelerator, none of which belong in a test of this rule.
+    """
+    if host in _LOOPBACK_HOSTS:
+        return
+    logger.warning(
+        "Binding to %s exposes this server beyond localhost. It has no "
+        "authentication and will accept PDF uploads from anyone who can "
+        "reach it. Put it behind a proxy that authenticates, or restrict "
+        "access at the network level.",
+        host,
+    )
+    if max_file_size_bytes == 0:
+        logger.warning(
+            "Uploads are unlimited (--max-file-size 0) on a non-loopback "
+            "bind; a single client can fill the disk. Set --max-file-size."
+        )
+
+
 def parse_page_ranges(value: Optional[str]) -> Optional[tuple]:
     """Parse a "START-END" page range into a 1-based inclusive tuple.
 
@@ -1100,19 +1123,7 @@ def main():
     max_file_size_bytes = args.max_file_size * 1024 * 1024 if args.max_file_size > 0 else 0
 
     logger.info(f"Starting Docling Fast Server on http://{args.host}:{args.port}")
-    if args.host not in _LOOPBACK_HOSTS:
-        logger.warning(
-            "Binding to %s exposes this server beyond localhost. It has no "
-            "authentication and will accept PDF uploads from anyone who can "
-            "reach it. Put it behind a proxy that authenticates, or restrict "
-            "access at the network level.",
-            args.host,
-        )
-        if max_file_size_bytes == 0:
-            logger.warning(
-                "Uploads are unlimited (--max-file-size 0) on a non-loopback "
-                "bind; a single client can fill the disk. Set --max-file-size."
-            )
+    warn_if_publicly_bound(args.host, max_file_size_bytes)
     psm_str = f", psm={args.psm}" if args.psm is not None else ""
     logger.info(
         f"OCR settings: do_ocr={not args.no_ocr}, ocr_engine={args.ocr_engine}, "

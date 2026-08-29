@@ -31,31 +31,6 @@ class _ExplodingUpload:
         raise RuntimeError("client disconnected mid-upload")
 
 
-@pytest.fixture
-def hybrid_server_module():
-    """Import hybrid_server with docling stubbed out."""
-    import importlib
-
-    with patch.dict(
-        "sys.modules",
-        {
-            "docling": MagicMock(),
-            "docling.datamodel": MagicMock(),
-            "docling.datamodel.accelerator_options": MagicMock(),
-            "docling.datamodel.base_models": MagicMock(),
-            "docling.datamodel.pipeline_options": MagicMock(),
-            "docling.document_converter": MagicMock(),
-            "docling.models": MagicMock(),
-            "docling.models.factories": MagicMock(),
-            "uvicorn": MagicMock(),
-        },
-    ):
-        from opendataloader_pdf import hybrid_server
-
-        importlib.reload(hybrid_server)
-        yield hybrid_server
-
-
 def _endpoint(app, path):
     for route in app.routes:
         if getattr(route, "path", None) == path:
@@ -86,10 +61,14 @@ def test_aborted_upload_leaves_no_temp_file(hybrid_server_module, path):
 
     before = _temp_pdfs()
 
-    with pytest.raises(RuntimeError, match="client disconnected"):
-        asyncio.run(
-            _endpoint(app, path)(_ExplodingUpload(), **_EXTRA_KWARGS[path])
-        )
+    # /v1/profile/file builds its profile converters on first use. These tests
+    # are about temp-file handling, and with the [hybrid] extra installed that
+    # construction is real and slow, so stub the factory out.
+    with patch.object(hybrid_server_module, "create_converter", return_value=MagicMock()):
+        with pytest.raises(RuntimeError, match="client disconnected"):
+            asyncio.run(
+                _endpoint(app, path)(_ExplodingUpload(), **_EXTRA_KWARGS[path])
+            )
 
     leaked = _temp_pdfs() - before
     assert not leaked, f"aborted upload leaked temp file(s): {leaked}"
@@ -116,7 +95,8 @@ def test_profile_endpoint_enforces_max_file_size(hybrid_server_module):
     hybrid_server_module.converter = MagicMock()
 
     before = _temp_pdfs()
-    response = asyncio.run(_endpoint(app, "/v1/profile/file")(_BigUpload()))
+    with patch.object(hybrid_server_module, "create_converter", return_value=MagicMock()):
+        response = asyncio.run(_endpoint(app, "/v1/profile/file")(_BigUpload()))
 
     assert response.status_code == 413
     assert not (_temp_pdfs() - before)
