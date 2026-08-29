@@ -81,8 +81,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-DEFAULT_HOST = "0.0.0.0"
+# Loopback by default. This server has no authentication and accepts arbitrary
+# PDF uploads that it then runs OCR and ML models over, so binding every
+# interface is not a safe default. The Java client targets
+# http://localhost:5002 (HybridConfig.DOCLING_FAST_DEFAULT_URL), so the normal
+# local workflow is unaffected. Pass --host 0.0.0.0 to expose it deliberately.
+DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5002
+
+# Hosts that keep the server reachable only from this machine.
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 MAX_FILE_SIZE = 0  # No file size limit by default (0 = unlimited)
 UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1MB chunks for streaming upload
 
@@ -1054,6 +1062,19 @@ def main():
     max_file_size_bytes = args.max_file_size * 1024 * 1024 if args.max_file_size > 0 else 0
 
     logger.info(f"Starting Docling Fast Server on http://{args.host}:{args.port}")
+    if args.host not in _LOOPBACK_HOSTS:
+        logger.warning(
+            "Binding to %s exposes this server beyond localhost. It has no "
+            "authentication and will accept PDF uploads from anyone who can "
+            "reach it. Put it behind a proxy that authenticates, or restrict "
+            "access at the network level.",
+            args.host,
+        )
+        if max_file_size_bytes == 0:
+            logger.warning(
+                "Uploads are unlimited (--max-file-size 0) on a non-loopback "
+                "bind; a single client can fill the disk. Set --max-file-size."
+            )
     psm_str = f", psm={args.psm}" if args.psm is not None else ""
     logger.info(
         f"OCR settings: do_ocr={not args.no_ocr}, ocr_engine={args.ocr_engine}, "
