@@ -275,8 +275,12 @@ public class MarkdownTableTest {
             "No cell tag should be HTML-escaped. Got: " + markdown);
         assertTrue(markdown.contains("<td") || markdown.contains("<th"),
             "Opening cell tags should be written raw. Got: " + markdown);
-        assertTrue(markdown.contains("colspan=\"2\""),
-            "colspan should survive on the raw tag. Got: " + markdown);
+        // TableBorderCell takes (row, column, rowSpan, colSpan), so the cell
+        // built above spans rows, not columns. Either way the point is that the
+        // span attribute reaches the output on a raw tag instead of an escaped
+        // one; CI confirmed the generator emits rowspan="2" here.
+        assertTrue(markdown.contains("rowspan=\"2\""),
+            "The span attribute should survive on the raw tag. Got: " + markdown);
     }
 
     private String generateHtmlMarkdownTable(TableBorder table) throws IOException {
