@@ -66,20 +66,35 @@ class CustomBuildHook(BuildHookInterface):
         # (force-included via [tool.hatch.build] artifacts in pyproject.toml),
         # and there is no java/ tree to rebuild from. Do not remove — sdist
         # installs would break with a spurious "mvn package" error.
-        if (
-            dest_jar_path.exists()
-            and license_path.exists()
-            and notice_path.exists()
-            and third_party_dest.exists()
-        ):
-            print("All required files already exist (building from sdist), skipping copy")
-            return
+        #
+        # The absence of that tree is what identifies an sdist, NOT the presence
+        # of the staged files. Those are gitignored and nothing ever deletes
+        # them — build-python.sh only cleans dist/ — so in a monorepo checkout
+        # they survive from one build to the next. Skipping on "they exist"
+        # meant a second build silently packaged the first build's JAR, which
+        # is exactly what build-all.sh does when it rebuilds Java (step 1/3) and
+        # then Python (step 2/3) at a new version.
+        source_tree = root_dir / "../../java/opendataloader-pdf-cli"
+        if not source_tree.is_dir():
+            if (
+                dest_jar_path.exists()
+                and license_path.exists()
+                and notice_path.exists()
+                and third_party_dest.exists()
+            ):
+                print("All required files already exist (building from sdist), skipping copy")
+                return
+            raise RuntimeError(
+                "No java/ source tree to build from and the packaged files are "
+                f"incomplete under {pkg_dir}. A source build needs the monorepo "
+                "checkout; an sdist install needs the JAR, LICENSE, NOTICE and "
+                "THIRD_PARTY that [tool.hatch.build] force-includes."
+            )
 
         # --- Copy JAR ---
+        # Always re-copied, overwriting any JAR staged by an earlier build.
         print(f"Root DIR: {root_dir}")
-        source_jar_glob = str(
-            root_dir / "../../java/opendataloader-pdf-cli/target/opendataloader-pdf-cli-*.jar"
-        )
+        source_jar_glob = str(source_tree / "target/opendataloader-pdf-cli-*.jar")
         resolved_glob_path = Path(source_jar_glob).resolve()
         print(f"Searching for JAR file in: {resolved_glob_path}")
 
