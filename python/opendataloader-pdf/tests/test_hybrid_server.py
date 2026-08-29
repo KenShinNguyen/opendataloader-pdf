@@ -1,7 +1,6 @@
 """Tests for hybrid_server."""
 
 import logging
-import sys
 from unittest.mock import MagicMock, patch
 
 
@@ -15,6 +14,7 @@ def test_gpu_detected_logging(caplog):
     with patch.dict("sys.modules", {"torch": mock_torch}):
         # Re-import to pick up the mock
         import importlib
+
         from opendataloader_pdf import hybrid_server
 
         importlib.reload(hybrid_server)

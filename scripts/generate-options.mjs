@@ -51,10 +51,38 @@ function toSnakeCase(str) {
 const LIST_OPTIONS = new Set(['format', 'content-safety-off']);
 
 /**
+ * Options whose values are numbers, and which number kind they take.
+ *
+ * options.json types every non-boolean option as "string" because that is all
+ * the Java exporter records, so the numeric ones have to be named here — the
+ * same way LIST_OPTIONS names the comma-separated ones. Moving this to the
+ * exporter would make options.json the single source of truth; until then this
+ * map is what lets the bindings accept a real number.
+ */
+const NUMERIC_OPTIONS = new Map([
+  ['threads', 'int'],
+  ['hybrid-timeout', 'int'],
+  ['image-resolution', 'float'],
+  ['space-ratio', 'float'],
+]);
+
+/**
+ * Options naming a filesystem path, which may be given as a pathlib.Path.
+ */
+const PATH_OPTIONS = new Set(['output-dir', 'image-dir']);
+
+/**
  * Check if option supports list values.
  */
 function isListOption(opt) {
   return LIST_OPTIONS.has(opt.name);
+}
+
+/**
+ * Number kind for an option, or undefined when it is not numeric.
+ */
+function numericKind(opt) {
+  return NUMERIC_OPTIONS.get(opt.name);
 }
 
 /**
@@ -126,6 +154,9 @@ function generateNodeConvertOptions() {
       tsType = 'boolean';
     } else if (isListOption(opt)) {
       tsType = 'string | string[]';
+    } else if (numericKind(opt)) {
+      // number as well as string: `threads: 4` is the natural call.
+      tsType = 'string | number';
     }
 
     lines.push(`  /** ${opt.description} */`);
@@ -165,7 +196,8 @@ function generateNodeConvertOptions() {
       lines.push(`    convertOptions.${camelName} = true;`);
       lines.push('  }');
     } else {
-      lines.push(`  if (cliOptions.${camelName}) {`);
+      // commander omits absent options; an explicitly passed '' must survive.
+      lines.push(`  if (cliOptions.${camelName} !== undefined && cliOptions.${camelName} !== null) {`);
       lines.push(`    convertOptions.${camelName} = cliOptions.${camelName};`);
       lines.push('  }');
     }
@@ -193,18 +225,23 @@ function generateNodeConvertOptions() {
       lines.push(`    args.push('${cliFlag}');`);
       lines.push('  }');
     } else if (isListOption(opt)) {
-      lines.push(`  if (options.${camelName}) {`);
+      // An empty array means "no value given", so it is skipped like undefined.
+      lines.push(`  if (options.${camelName} !== undefined && options.${camelName} !== null) {`);
       lines.push(`    if (Array.isArray(options.${camelName})) {`);
       lines.push(`      if (options.${camelName}.length > 0) {`);
       lines.push(`        args.push('${cliFlag}', options.${camelName}.join(','));`);
       lines.push('      }');
       lines.push('    } else {');
-      lines.push(`      args.push('${cliFlag}', options.${camelName});`);
+      lines.push(`      args.push('${cliFlag}', String(options.${camelName}));`);
       lines.push('    }');
       lines.push('  }');
     } else {
-      lines.push(`  if (options.${camelName}) {`);
-      lines.push(`    args.push('${cliFlag}', options.${camelName});`);
+      // Explicit null/undefined check, not truthiness: 0 is meaningful for the
+      // numeric options (--hybrid-timeout 0 means "no timeout") and '' is
+      // meaningful for --replace-invalid-chars. String() so a number argument
+      // is not dropped or passed through as a non-string.
+      lines.push(`  if (options.${camelName} !== undefined && options.${camelName} !== null) {`);
+      lines.push(`    args.push('${cliFlag}', String(options.${camelName}));`);
       lines.push('  }');
     }
   }
@@ -284,6 +321,7 @@ function generatePythonConvert() {
   lines.push('"""');
   lines.push('Auto-generated convert function for opendataloader-pdf.');
   lines.push('"""');
+  lines.push('from os import PathLike');
   lines.push('from typing import List, Optional, Union');
   lines.push('');
   lines.push('from .runner import run_jar');
@@ -292,18 +330,29 @@ function generatePythonConvert() {
 
   // Generate function signature
   lines.push('def convert(');
-  lines.push('    input_path: Union[str, List[str]],');
+  lines.push('    input_path: Union[str, PathLike, List[Union[str, PathLike]]],');
 
   for (const opt of options.options) {
     const snakeName = toSnakeCase(opt.name);
     let typeHint;
     let defaultVal;
 
+    const numeric = numericKind(opt);
     if (opt.type === 'boolean') {
       typeHint = 'bool';
       defaultVal = opt.default ? 'True' : 'False';
     } else if (isListOption(opt)) {
       typeHint = 'Optional[Union[str, List[str]]]';
+      defaultVal = 'None';
+    } else if (numeric === 'int') {
+      // str stays accepted: callers already pass "4".
+      typeHint = 'Optional[Union[int, str]]';
+      defaultVal = 'None';
+    } else if (numeric === 'float') {
+      typeHint = 'Optional[Union[float, int, str]]';
+      defaultVal = 'None';
+    } else if (PATH_OPTIONS.has(opt.name)) {
+      typeHint = 'Optional[Union[str, PathLike]]';
       defaultVal = 'None';
     } else {
       typeHint = 'Optional[str]';
@@ -330,11 +379,11 @@ function generatePythonConvert() {
   // Generate function body
   lines.push('    args: List[str] = []');
   lines.push('');
-  lines.push('    # Build input paths');
-  lines.push('    if isinstance(input_path, list):');
-  lines.push('        args.extend(input_path)');
+  lines.push('    # Build input paths (str() so pathlib.Path inputs work too)');
+  lines.push('    if isinstance(input_path, (list, tuple)):');
+  lines.push('        args.extend(str(p) for p in input_path)');
   lines.push('    else:');
-  lines.push('        args.append(input_path)');
+  lines.push('        args.append(str(input_path))');
   lines.push('');
 
   // Generate args building for each option
@@ -346,15 +395,22 @@ function generatePythonConvert() {
       lines.push(`    if ${snakeName}:`);
       lines.push(`        args.append("${cliFlag}")`);
     } else if (isListOption(opt)) {
-      lines.push(`    if ${snakeName}:`);
-      lines.push(`        if isinstance(${snakeName}, list):`);
+      // An empty list means "no value given", so it is skipped like None.
+      lines.push(`    if ${snakeName} is not None:`);
+      lines.push(`        if isinstance(${snakeName}, (list, tuple)):`);
       lines.push(`            if ${snakeName}:`);
-      lines.push(`                args.extend(["${cliFlag}", ",".join(${snakeName})])`);
+      lines.push(
+        `                args.extend(["${cliFlag}", ",".join(str(v) for v in ${snakeName})])`,
+      );
       lines.push(`        else:`);
-      lines.push(`            args.extend(["${cliFlag}", ${snakeName}])`);
+      lines.push(`            args.extend(["${cliFlag}", str(${snakeName})])`);
     } else {
-      lines.push(`    if ${snakeName}:`);
-      lines.push(`        args.extend(["${cliFlag}", ${snakeName}])`);
+      // `is not None`, not truthiness: 0 is a meaningful value for the numeric
+      // options (--hybrid-timeout 0 means "no timeout") and "" is meaningful
+      // for --replace-invalid-chars. str() so an int, float or Path argument
+      // reaches subprocess as text instead of raising TypeError.
+      lines.push(`    if ${snakeName} is not None:`);
+      lines.push(`        args.extend(["${cliFlag}", str(${snakeName})])`);
     }
   }
 

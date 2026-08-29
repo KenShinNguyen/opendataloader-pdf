@@ -225,3 +225,41 @@ describe('buildConvertOptions()', () => {
     expect(result.imageFormat).toBe('jpeg');
   });
 });
+
+describe('buildArgs value handling', () => {
+  // Numeric options were typed `string` and pushed unconverted, and the emitted
+  // guard was a truthiness test — so `threads: 4` put a number in the argv array
+  // and `hybridTimeout: 0` was dropped even though the option documents 0 as
+  // "no timeout". The same truthiness bug dropped `replaceInvalidChars: ''`.
+
+  it('stringifies every argument', () => {
+    const args = buildArgs({ threads: 4, hybridTimeout: 0, spaceRatio: 0.17 });
+    expect(args.every((a) => typeof a === 'string')).toBe(true);
+  });
+
+  it('accepts numbers as well as strings for numeric options', () => {
+    expect(buildArgs({ threads: 4 })).toEqual(['--threads', '4']);
+    expect(buildArgs({ threads: '4' })).toEqual(['--threads', '4']);
+    expect(buildArgs({ imageResolution: 300 })).toEqual(['--image-resolution', '300']);
+  });
+
+  it('forwards 0 instead of dropping it', () => {
+    expect(buildArgs({ hybridTimeout: 0 })).toEqual(['--hybrid-timeout', '0']);
+  });
+
+  it('forwards an empty replacement character instead of dropping it', () => {
+    expect(buildArgs({ replaceInvalidChars: '' })).toEqual(['--replace-invalid-chars', '']);
+  });
+
+  it('still omits options that were not given', () => {
+    expect(buildArgs({})).toEqual([]);
+  });
+
+  it('treats an empty format array as absent', () => {
+    expect(buildArgs({ format: [] })).toEqual([]);
+  });
+
+  it('joins list values with commas', () => {
+    expect(buildArgs({ format: ['markdown', 'json'] })).toEqual(['--format', 'markdown,json']);
+  });
+});

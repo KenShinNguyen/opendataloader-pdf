@@ -54,7 +54,7 @@ export interface ConvertOptions {
   /** Hybrid backend server URL (overrides default) */
   hybridUrl?: string;
   /** Hybrid backend request timeout in milliseconds (0 = no timeout). Default: 0 */
-  hybridTimeout?: string;
+  hybridTimeout?: string | number;
   /** Opt in to Java fallback on hybrid backend error (default: disabled) */
   hybridFallback?: boolean;
   /** DLA label 7 (regionlist) handling. Requires --hybrid=hancom-ai. Values: table-first (default; check TSR overlap), list-only (skip TSR, always treat as list) */
@@ -66,11 +66,11 @@ export interface ConvertOptions {
   /** Write output to stdout instead of file (single format only) */
   toStdout?: boolean;
   /** Number of worker threads for per-page processing. Default: 1 (sequential, stable). Values >1 (experimental) run pages in parallel for faster throughput; output may vary slightly on some PDFs. Capped at the number of available CPU cores. Applies to the native Java pipeline only; ignored in --hybrid mode */
-  threads?: string;
+  threads?: string | number;
   /** Set the rendering resolution for images in DPI. Higher values improve image quality but increase memory consumption; lower values reduce memory usage at the cost of detail. Accepts positive decimal DPI values (e.g., 144.0). Default: 144.0. */
-  imageResolution?: string;
+  imageResolution?: string | number;
   /** Set the ratio used to calculate the automatic space-insertion threshold (threshold = space-ratio * font size). If the horizontal gap between two adjacent symbols exceeds this threshold, an extra space is inserted to text value. Accepts decimals (e.g., 0.17). Default: 0.17 */
-  spaceRatio?: string;
+  spaceRatio?: string | number;
 }
 
 /**
@@ -118,19 +118,19 @@ export interface CliOptions {
 export function buildConvertOptions(cliOptions: CliOptions): ConvertOptions {
   const convertOptions: ConvertOptions = {};
 
-  if (cliOptions.outputDir) {
+  if (cliOptions.outputDir !== undefined && cliOptions.outputDir !== null) {
     convertOptions.outputDir = cliOptions.outputDir;
   }
-  if (cliOptions.password) {
+  if (cliOptions.password !== undefined && cliOptions.password !== null) {
     convertOptions.password = cliOptions.password;
   }
-  if (cliOptions.format) {
+  if (cliOptions.format !== undefined && cliOptions.format !== null) {
     convertOptions.format = cliOptions.format;
   }
   if (cliOptions.quiet) {
     convertOptions.quiet = true;
   }
-  if (cliOptions.contentSafetyOff) {
+  if (cliOptions.contentSafetyOff !== undefined && cliOptions.contentSafetyOff !== null) {
     convertOptions.contentSafetyOff = cliOptions.contentSafetyOff;
   }
   if (cliOptions.sanitize) {
@@ -139,40 +139,40 @@ export function buildConvertOptions(cliOptions: CliOptions): ConvertOptions {
   if (cliOptions.keepLineBreaks) {
     convertOptions.keepLineBreaks = true;
   }
-  if (cliOptions.replaceInvalidChars) {
+  if (cliOptions.replaceInvalidChars !== undefined && cliOptions.replaceInvalidChars !== null) {
     convertOptions.replaceInvalidChars = cliOptions.replaceInvalidChars;
   }
   if (cliOptions.useStructTree) {
     convertOptions.useStructTree = true;
   }
-  if (cliOptions.tableMethod) {
+  if (cliOptions.tableMethod !== undefined && cliOptions.tableMethod !== null) {
     convertOptions.tableMethod = cliOptions.tableMethod;
   }
-  if (cliOptions.readingOrder) {
+  if (cliOptions.readingOrder !== undefined && cliOptions.readingOrder !== null) {
     convertOptions.readingOrder = cliOptions.readingOrder;
   }
-  if (cliOptions.markdownPageSeparator) {
+  if (cliOptions.markdownPageSeparator !== undefined && cliOptions.markdownPageSeparator !== null) {
     convertOptions.markdownPageSeparator = cliOptions.markdownPageSeparator;
   }
   if (cliOptions.markdownWithHtml) {
     convertOptions.markdownWithHtml = true;
   }
-  if (cliOptions.textPageSeparator) {
+  if (cliOptions.textPageSeparator !== undefined && cliOptions.textPageSeparator !== null) {
     convertOptions.textPageSeparator = cliOptions.textPageSeparator;
   }
-  if (cliOptions.htmlPageSeparator) {
+  if (cliOptions.htmlPageSeparator !== undefined && cliOptions.htmlPageSeparator !== null) {
     convertOptions.htmlPageSeparator = cliOptions.htmlPageSeparator;
   }
-  if (cliOptions.imageOutput) {
+  if (cliOptions.imageOutput !== undefined && cliOptions.imageOutput !== null) {
     convertOptions.imageOutput = cliOptions.imageOutput;
   }
-  if (cliOptions.imageFormat) {
+  if (cliOptions.imageFormat !== undefined && cliOptions.imageFormat !== null) {
     convertOptions.imageFormat = cliOptions.imageFormat;
   }
-  if (cliOptions.imageDir) {
+  if (cliOptions.imageDir !== undefined && cliOptions.imageDir !== null) {
     convertOptions.imageDir = cliOptions.imageDir;
   }
-  if (cliOptions.pages) {
+  if (cliOptions.pages !== undefined && cliOptions.pages !== null) {
     convertOptions.pages = cliOptions.pages;
   }
   if (cliOptions.includeHeaderFooter) {
@@ -181,40 +181,40 @@ export function buildConvertOptions(cliOptions: CliOptions): ConvertOptions {
   if (cliOptions.detectStrikethrough) {
     convertOptions.detectStrikethrough = true;
   }
-  if (cliOptions.hybrid) {
+  if (cliOptions.hybrid !== undefined && cliOptions.hybrid !== null) {
     convertOptions.hybrid = cliOptions.hybrid;
   }
-  if (cliOptions.hybridMode) {
+  if (cliOptions.hybridMode !== undefined && cliOptions.hybridMode !== null) {
     convertOptions.hybridMode = cliOptions.hybridMode;
   }
-  if (cliOptions.hybridUrl) {
+  if (cliOptions.hybridUrl !== undefined && cliOptions.hybridUrl !== null) {
     convertOptions.hybridUrl = cliOptions.hybridUrl;
   }
-  if (cliOptions.hybridTimeout) {
+  if (cliOptions.hybridTimeout !== undefined && cliOptions.hybridTimeout !== null) {
     convertOptions.hybridTimeout = cliOptions.hybridTimeout;
   }
   if (cliOptions.hybridFallback) {
     convertOptions.hybridFallback = true;
   }
-  if (cliOptions.hybridHancomAiRegionlistStrategy) {
+  if (cliOptions.hybridHancomAiRegionlistStrategy !== undefined && cliOptions.hybridHancomAiRegionlistStrategy !== null) {
     convertOptions.hybridHancomAiRegionlistStrategy = cliOptions.hybridHancomAiRegionlistStrategy;
   }
-  if (cliOptions.hybridHancomAiOcrStrategy) {
+  if (cliOptions.hybridHancomAiOcrStrategy !== undefined && cliOptions.hybridHancomAiOcrStrategy !== null) {
     convertOptions.hybridHancomAiOcrStrategy = cliOptions.hybridHancomAiOcrStrategy;
   }
-  if (cliOptions.hybridHancomAiImageCache) {
+  if (cliOptions.hybridHancomAiImageCache !== undefined && cliOptions.hybridHancomAiImageCache !== null) {
     convertOptions.hybridHancomAiImageCache = cliOptions.hybridHancomAiImageCache;
   }
   if (cliOptions.toStdout) {
     convertOptions.toStdout = true;
   }
-  if (cliOptions.threads) {
+  if (cliOptions.threads !== undefined && cliOptions.threads !== null) {
     convertOptions.threads = cliOptions.threads;
   }
-  if (cliOptions.imageResolution) {
+  if (cliOptions.imageResolution !== undefined && cliOptions.imageResolution !== null) {
     convertOptions.imageResolution = cliOptions.imageResolution;
   }
-  if (cliOptions.spaceRatio) {
+  if (cliOptions.spaceRatio !== undefined && cliOptions.spaceRatio !== null) {
     convertOptions.spaceRatio = cliOptions.spaceRatio;
   }
 
@@ -227,31 +227,31 @@ export function buildConvertOptions(cliOptions: CliOptions): ConvertOptions {
 export function buildArgs(options: ConvertOptions): string[] {
   const args: string[] = [];
 
-  if (options.outputDir) {
-    args.push('--output-dir', options.outputDir);
+  if (options.outputDir !== undefined && options.outputDir !== null) {
+    args.push('--output-dir', String(options.outputDir));
   }
-  if (options.password) {
-    args.push('--password', options.password);
+  if (options.password !== undefined && options.password !== null) {
+    args.push('--password', String(options.password));
   }
-  if (options.format) {
+  if (options.format !== undefined && options.format !== null) {
     if (Array.isArray(options.format)) {
       if (options.format.length > 0) {
         args.push('--format', options.format.join(','));
       }
     } else {
-      args.push('--format', options.format);
+      args.push('--format', String(options.format));
     }
   }
   if (options.quiet) {
     args.push('--quiet');
   }
-  if (options.contentSafetyOff) {
+  if (options.contentSafetyOff !== undefined && options.contentSafetyOff !== null) {
     if (Array.isArray(options.contentSafetyOff)) {
       if (options.contentSafetyOff.length > 0) {
         args.push('--content-safety-off', options.contentSafetyOff.join(','));
       }
     } else {
-      args.push('--content-safety-off', options.contentSafetyOff);
+      args.push('--content-safety-off', String(options.contentSafetyOff));
     }
   }
   if (options.sanitize) {
@@ -260,41 +260,41 @@ export function buildArgs(options: ConvertOptions): string[] {
   if (options.keepLineBreaks) {
     args.push('--keep-line-breaks');
   }
-  if (options.replaceInvalidChars) {
-    args.push('--replace-invalid-chars', options.replaceInvalidChars);
+  if (options.replaceInvalidChars !== undefined && options.replaceInvalidChars !== null) {
+    args.push('--replace-invalid-chars', String(options.replaceInvalidChars));
   }
   if (options.useStructTree) {
     args.push('--use-struct-tree');
   }
-  if (options.tableMethod) {
-    args.push('--table-method', options.tableMethod);
+  if (options.tableMethod !== undefined && options.tableMethod !== null) {
+    args.push('--table-method', String(options.tableMethod));
   }
-  if (options.readingOrder) {
-    args.push('--reading-order', options.readingOrder);
+  if (options.readingOrder !== undefined && options.readingOrder !== null) {
+    args.push('--reading-order', String(options.readingOrder));
   }
-  if (options.markdownPageSeparator) {
-    args.push('--markdown-page-separator', options.markdownPageSeparator);
+  if (options.markdownPageSeparator !== undefined && options.markdownPageSeparator !== null) {
+    args.push('--markdown-page-separator', String(options.markdownPageSeparator));
   }
   if (options.markdownWithHtml) {
     args.push('--markdown-with-html');
   }
-  if (options.textPageSeparator) {
-    args.push('--text-page-separator', options.textPageSeparator);
+  if (options.textPageSeparator !== undefined && options.textPageSeparator !== null) {
+    args.push('--text-page-separator', String(options.textPageSeparator));
   }
-  if (options.htmlPageSeparator) {
-    args.push('--html-page-separator', options.htmlPageSeparator);
+  if (options.htmlPageSeparator !== undefined && options.htmlPageSeparator !== null) {
+    args.push('--html-page-separator', String(options.htmlPageSeparator));
   }
-  if (options.imageOutput) {
-    args.push('--image-output', options.imageOutput);
+  if (options.imageOutput !== undefined && options.imageOutput !== null) {
+    args.push('--image-output', String(options.imageOutput));
   }
-  if (options.imageFormat) {
-    args.push('--image-format', options.imageFormat);
+  if (options.imageFormat !== undefined && options.imageFormat !== null) {
+    args.push('--image-format', String(options.imageFormat));
   }
-  if (options.imageDir) {
-    args.push('--image-dir', options.imageDir);
+  if (options.imageDir !== undefined && options.imageDir !== null) {
+    args.push('--image-dir', String(options.imageDir));
   }
-  if (options.pages) {
-    args.push('--pages', options.pages);
+  if (options.pages !== undefined && options.pages !== null) {
+    args.push('--pages', String(options.pages));
   }
   if (options.includeHeaderFooter) {
     args.push('--include-header-footer');
@@ -302,41 +302,41 @@ export function buildArgs(options: ConvertOptions): string[] {
   if (options.detectStrikethrough) {
     args.push('--detect-strikethrough');
   }
-  if (options.hybrid) {
-    args.push('--hybrid', options.hybrid);
+  if (options.hybrid !== undefined && options.hybrid !== null) {
+    args.push('--hybrid', String(options.hybrid));
   }
-  if (options.hybridMode) {
-    args.push('--hybrid-mode', options.hybridMode);
+  if (options.hybridMode !== undefined && options.hybridMode !== null) {
+    args.push('--hybrid-mode', String(options.hybridMode));
   }
-  if (options.hybridUrl) {
-    args.push('--hybrid-url', options.hybridUrl);
+  if (options.hybridUrl !== undefined && options.hybridUrl !== null) {
+    args.push('--hybrid-url', String(options.hybridUrl));
   }
-  if (options.hybridTimeout) {
-    args.push('--hybrid-timeout', options.hybridTimeout);
+  if (options.hybridTimeout !== undefined && options.hybridTimeout !== null) {
+    args.push('--hybrid-timeout', String(options.hybridTimeout));
   }
   if (options.hybridFallback) {
     args.push('--hybrid-fallback');
   }
-  if (options.hybridHancomAiRegionlistStrategy) {
-    args.push('--hybrid-hancom-ai-regionlist-strategy', options.hybridHancomAiRegionlistStrategy);
+  if (options.hybridHancomAiRegionlistStrategy !== undefined && options.hybridHancomAiRegionlistStrategy !== null) {
+    args.push('--hybrid-hancom-ai-regionlist-strategy', String(options.hybridHancomAiRegionlistStrategy));
   }
-  if (options.hybridHancomAiOcrStrategy) {
-    args.push('--hybrid-hancom-ai-ocr-strategy', options.hybridHancomAiOcrStrategy);
+  if (options.hybridHancomAiOcrStrategy !== undefined && options.hybridHancomAiOcrStrategy !== null) {
+    args.push('--hybrid-hancom-ai-ocr-strategy', String(options.hybridHancomAiOcrStrategy));
   }
-  if (options.hybridHancomAiImageCache) {
-    args.push('--hybrid-hancom-ai-image-cache', options.hybridHancomAiImageCache);
+  if (options.hybridHancomAiImageCache !== undefined && options.hybridHancomAiImageCache !== null) {
+    args.push('--hybrid-hancom-ai-image-cache', String(options.hybridHancomAiImageCache));
   }
   if (options.toStdout) {
     args.push('--to-stdout');
   }
-  if (options.threads) {
-    args.push('--threads', options.threads);
+  if (options.threads !== undefined && options.threads !== null) {
+    args.push('--threads', String(options.threads));
   }
-  if (options.imageResolution) {
-    args.push('--image-resolution', options.imageResolution);
+  if (options.imageResolution !== undefined && options.imageResolution !== null) {
+    args.push('--image-resolution', String(options.imageResolution));
   }
-  if (options.spaceRatio) {
-    args.push('--space-ratio', options.spaceRatio);
+  if (options.spaceRatio !== undefined && options.spaceRatio !== null) {
+    args.push('--space-ratio', String(options.spaceRatio));
   }
 
   return args;

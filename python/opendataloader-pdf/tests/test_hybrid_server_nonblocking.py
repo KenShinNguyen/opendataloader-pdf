@@ -58,6 +58,7 @@ def mock_docling():
 def app_with_converter(mock_docling):
     """Create a FastAPI app with the mock converter."""
     import importlib
+
     from opendataloader_pdf import hybrid_server
 
     importlib.reload(hybrid_server)

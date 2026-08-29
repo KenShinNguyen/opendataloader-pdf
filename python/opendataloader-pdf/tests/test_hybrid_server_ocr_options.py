@@ -20,7 +20,6 @@ import pytest
 
 from opendataloader_pdf import hybrid_server
 
-
 # ---------- create_converter: factory delegation ----------
 
 def _capture_pipeline_options(**kwargs):

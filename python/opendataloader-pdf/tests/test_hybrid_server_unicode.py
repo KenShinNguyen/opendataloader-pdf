@@ -7,8 +7,6 @@ Starlette's JSONResponse.render().
 
 import json
 
-import pytest
-
 from opendataloader_pdf.hybrid_server import sanitize_unicode
 
 

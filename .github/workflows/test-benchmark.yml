@@ -21,6 +21,48 @@ permissions:
   contents: read
 
 jobs:
+  # Fast static checks, kept out of build-all.sh: that script is also the
+  # release path (release.yml), and a style nit should never block a release.
+  # Runs in parallel with `test` so lint feedback does not wait on the ~30 min
+  # Java build.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Ruff (Python)
+        working-directory: python/opendataloader-pdf
+        run: uvx ruff check src tests
+
+      - name: Install Node dependencies
+        working-directory: node/opendataloader-pdf
+        run: pnpm install --frozen-lockfile
+
+      - name: ESLint (Node)
+        working-directory: node/opendataloader-pdf
+        run: pnpm lint
+
+      - name: TypeScript typecheck (Node)
+        working-directory: node/opendataloader-pdf
+        run: pnpm exec tsc --noEmit -p tsconfig.json
+
   test:
     runs-on: ubuntu-latest
     steps:
