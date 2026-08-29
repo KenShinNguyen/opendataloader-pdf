@@ -18,7 +18,14 @@ if (sourceJarPaths.length === 0) {
   process.exit(1);
 }
 if (sourceJarPaths.length > 1) {
-  console.error(`Found multiple JAR files, expected one: ${sourceJarPaths}`);
+  // Usually an earlier build for a different version left its JAR behind.
+  const names = sourceJarPaths.map((p) => path.basename(p)).sort().join('\n  ');
+  console.error(
+    `Found more than one CLI JAR, so the right one cannot be chosen:\n  ${names}\n` +
+      "This usually means an earlier build left a JAR for a different version " +
+      "behind. Run 'mvn clean package' in the 'java/' directory to rebuild from " +
+      'a clean target/.',
+  );
   process.exit(1);
 }
 
