@@ -12,8 +12,6 @@ installed that segfaulted the whole pytest process (exit 139) instead of
 testing the one rule these cases are about.
 """
 
-import argparse
-
 import pytest
 
 from opendataloader_pdf import hybrid_server
@@ -31,8 +29,7 @@ def test_default_host_is_loopback():
 
 def test_argparse_default_host_is_loopback():
     """The flag default must match the constant, not just the constant itself."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default=hybrid_server.DEFAULT_HOST)
+    parser = hybrid_server.build_arg_parser()
     assert parser.parse_args([]).host == hybrid_server.DEFAULT_HOST
 
 
@@ -63,3 +60,32 @@ def test_wildcard_bind_with_size_cap_omits_the_upload_warning(caplog):
     warnings = _warnings(caplog)
     assert "beyond localhost" in warnings
     assert "unlimited" not in warnings
+
+
+def test_argparse_default_max_file_size_is_unset():
+    """None, not 0: the resolver has to tell "unset" from "explicitly 0"."""
+    parser = hybrid_server.build_arg_parser()
+    assert parser.parse_args([]).max_file_size is None
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1", "localhost"])
+def test_loopback_bind_stays_unlimited(host):
+    """Nobody else can reach it, and the local workflow feeds it large PDFs."""
+    assert hybrid_server.resolve_max_file_size_mb(host, None) == 0
+
+
+def test_public_bind_gets_a_default_cap():
+    """No authentication plus unbounded uploads is not a safe default."""
+    resolved = hybrid_server.resolve_max_file_size_mb("0.0.0.0", None)
+    assert resolved == hybrid_server.PUBLIC_BIND_MAX_FILE_SIZE_MB
+    assert resolved > 0
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "0.0.0.0"])
+def test_an_explicit_cap_wins_on_either_bind(host):
+    assert hybrid_server.resolve_max_file_size_mb(host, 500) == 500
+
+
+def test_an_explicit_zero_still_means_unlimited_on_a_public_bind():
+    """Opting into unlimited uploads stays possible — it just warns."""
+    assert hybrid_server.resolve_max_file_size_mb("0.0.0.0", 0) == 0
