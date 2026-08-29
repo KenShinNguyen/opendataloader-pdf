@@ -76,8 +76,21 @@ async function main(): Promise<number> {
   }
 }
 
-main().then((code) => {
-  if (code !== 0) {
-    process.exit(code);
-  }
-});
+main().then(
+  (code) => {
+    // Set exitCode rather than calling process.exit(). When stdout/stderr is a
+    // pipe, Node writes to it asynchronously, and process.exit() drops whatever
+    // is still buffered — truncating streamed Java output at the pipe buffer
+    // (~64KB on Linux). Letting the process end on its own flushes everything
+    // first. Nothing holds the event loop open once the Java child has closed,
+    // so the CLI still exits promptly.
+    process.exitCode = code;
+  },
+  (err: unknown) => {
+    // main() resolves for every anticipated failure, so this only fires on an
+    // unexpected throw (e.g. while building convert options). Report it instead
+    // of letting it surface as an unhandled rejection.
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+  },
+);
