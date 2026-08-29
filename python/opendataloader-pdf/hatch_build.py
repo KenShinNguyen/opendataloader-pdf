@@ -1,10 +1,41 @@
-"""Custom build hook for hatch to copy JAR and license files."""
+"""Custom hatch hooks: resolve the readme, and copy the JAR and license files."""
 
 import glob
 import shutil
 from pathlib import Path
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+from hatchling.metadata.plugin.interface import MetadataHookInterface
+
+
+class CustomMetadataHook(MetadataHookInterface):
+    """Resolve `readme` without requiring a pre-copied README.md.
+
+    hatchling validates [project.readme] while parsing metadata, which happens
+    *before* any build hook runs. Pointing it at a plain "README.md" therefore
+    made a source install fail outright on a fresh clone, because that file is
+    not tracked — build-python.sh copies it in and deletes it again:
+
+        OSError: Readme file does not exist: README.md
+
+    Resolving it here instead covers both layouts: the monorepo, where the
+    canonical README lives two levels up, and an extracted sdist, which ships
+    its own copy alongside pyproject.toml.
+    """
+
+    def update(self, metadata):
+        root_dir = Path(self.root)
+        for candidate in (root_dir / "README.md", root_dir / "../../README.md"):
+            if candidate.exists():
+                metadata["readme"] = {
+                    "content-type": "text/markdown",
+                    "text": candidate.read_text(encoding="utf-8"),
+                }
+                return
+        raise FileNotFoundError(
+            "No README.md found next to pyproject.toml or at the repository "
+            f"root (looked in {root_dir} and {(root_dir / '../../').resolve()})."
+        )
 
 
 class CustomBuildHook(BuildHookInterface):
@@ -19,6 +50,17 @@ class CustomBuildHook(BuildHookInterface):
 
         readme_path = root_dir / "README.md"
 
+        # The sdist must carry its own README: once extracted there is no
+        # repository root to read from, and CustomMetadataHook runs again when
+        # the wheel is built out of that sdist. Copying it here means a plain
+        # `uv build` / `pip install .` works without build-python.sh having
+        # staged it first.
+        if not readme_path.exists():
+            root_readme = root_dir / "../../README.md"
+            if root_readme.exists():
+                print(f"Copying README to {readme_path}")
+                shutil.copy(root_readme, readme_path)
+
         # sdist-install code path: when users `pip install <sdist>.tar.gz`,
         # the extracted sdist already contains JAR/LICENSE/NOTICE/THIRD_PARTY
         # (force-included via [tool.hatch.build] artifacts in pyproject.toml),
@@ -29,7 +71,6 @@ class CustomBuildHook(BuildHookInterface):
             and license_path.exists()
             and notice_path.exists()
             and third_party_dest.exists()
-            and readme_path.exists()
         ):
             print("All required files already exist (building from sdist), skipping copy")
             return
@@ -45,10 +86,18 @@ class CustomBuildHook(BuildHookInterface):
         source_jar_paths = glob.glob(source_jar_glob)
         if not source_jar_paths:
             raise RuntimeError(
-                f"Could not find the JAR file. Please run 'mvn package' in the 'java/' directory first. Searched in: {resolved_glob_path}"
+                "Could not find the JAR file. Please run 'mvn package' in the "
+                f"'java/' directory first. Searched in: {resolved_glob_path}"
             )
         if len(source_jar_paths) > 1:
-            raise RuntimeError(f"Found multiple JAR files, expected one: {source_jar_paths}")
+            names = "\n  ".join(sorted(Path(p).name for p in source_jar_paths))
+            raise RuntimeError(
+                "Found more than one CLI JAR, so the right one cannot be chosen:\n  "
+                f"{names}\n"
+                "This usually means an earlier build left a JAR for a different "
+                "version behind. Run 'mvn clean package' in the 'java/' directory "
+                "to rebuild from a clean target/."
+            )
         source_jar_path = source_jar_paths[0]
         print(f"Found source JAR: {source_jar_path}")
 

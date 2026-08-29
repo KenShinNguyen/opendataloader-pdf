@@ -44,6 +44,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MarkdownGenerator implements Closeable {
 
@@ -66,6 +68,11 @@ public class MarkdownGenerator implements Closeable {
     protected String imageFormat = Config.IMAGE_FORMAT_PNG;
     protected boolean includeHeaderFooter = false;
     protected static final String strikethroughTextMD = "~~";
+    /**
+     * A '<' only opens a tag when a name-like character follows it, so that is
+     * the only case worth escaping.
+     */
+    private static final Pattern TAG_OPENING = Pattern.compile("<(?=[A-Za-z!/?])");
 
     MarkdownGenerator(File inputPdf, Config config) throws IOException {
         String cutPdfFileName = inputPdf.getName();
@@ -439,15 +446,28 @@ public class MarkdownGenerator implements Closeable {
         markdownWriter.write(MarkdownSyntax.SPACE);
     }
 
+    /**
+     * Escapes only what Markdown actually reserves.
+     *
+     * <p>This used to convert '&amp;', '&lt;' and '&gt;' to HTML entities. Markdown gives
+     * none of them that meaning: '&amp;' is an ordinary character, and '&gt;' only starts
+     * a blockquote at the beginning of a line. Escaping them all corrupted
+     * ordinary text for the consumers this output mainly serves — the ones that
+     * read the Markdown as text rather than rendering it to HTML — so "R&amp;D"
+     * arrived as "R&amp;amp;D". It also double-escaped any entity the PDF already
+     * contained, turning "&amp;amp;" into "&amp;amp;amp;".
+     *
+     * <p>A '&lt;' that could open a tag is still escaped, because raw HTML in
+     * Markdown reaches a renderer intact. A backslash is used rather than an
+     * entity: CommonMark renders it as a literal '&lt;' and it leaves the text
+     * readable.
+     */
     protected String getCorrectMarkdownString(String value) {
         if (value == null) {
             return "";
         }
-        return value
-            .replace("\u0000", "")
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;");
+        String sanitized = value.replace("\u0000", "");
+        return TAG_OPENING.matcher(sanitized).replaceAll(Matcher.quoteReplacement("\\<"));
     }
 
     public static void getTextFromLineForMarkdown(TextLine line, StringBuilder stringBuilder) {

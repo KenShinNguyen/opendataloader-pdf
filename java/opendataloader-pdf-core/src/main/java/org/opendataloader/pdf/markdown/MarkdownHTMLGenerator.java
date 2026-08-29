@@ -79,7 +79,11 @@ public class MarkdownHTMLGenerator extends MarkdownGenerator {
             cellTag.append(" rowspan=\"").append(rowSpan).append("\"");
         }
         cellTag.append(">");
-        markdownWriter.write(getCorrectMarkdownString(cellTag.toString()));
+        // Written raw, like every other tag this generator emits. Passing it
+        // through getCorrectMarkdownString() escaped the opening tag while the
+        // matching </td> stayed raw, so --markdown-with-html produced tables
+        // whose cells opened with a literal "&lt;td&gt;".
+        markdownWriter.write(cellTag.toString());
     }
 
     private void writeCellTagEnd(boolean isHeader) throws IOException {

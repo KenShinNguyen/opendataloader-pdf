@@ -250,6 +250,53 @@ public class MarkdownTableTest {
         cell.addContentObject(paragraph);
     }
 
+    /**
+     * --markdown-with-html emits real HTML tables. The opening cell tag used to
+     * be pushed through getCorrectMarkdownString(), which HTML-escaped it while
+     * the matching </td> was written raw, so every cell opened with a literal
+     * "&lt;td&gt;" and the table did not render.
+     */
+    @Test
+    void testHtmlTableCellTagsAreNotEscaped() throws IOException {
+        TableBorderCell cell00 = new TableBorderCell(0, 0, 2, 1, null);
+        addTextContent(cell00, "A");
+        TableBorderCell cell02 = new TableBorderCell(0, 2, 1, 1, null);
+        addTextContent(cell02, "B");
+
+        TableBorderRow row0 = new TableBorderRow(0, 3, null);
+        row0.getCells()[0] = cell00;
+        row0.getCells()[1] = cell00;
+        row0.getCells()[2] = cell02;
+
+        TableBorder table = new TableBorder(null, new TableBorderRow[]{row0}, 1, 3);
+        String markdown = generateHtmlMarkdownTable(table);
+
+        assertFalse(markdown.contains("&lt;"),
+            "No cell tag should be HTML-escaped. Got: " + markdown);
+        assertTrue(markdown.contains("<td") || markdown.contains("<th"),
+            "Opening cell tags should be written raw. Got: " + markdown);
+        // TableBorderCell takes (row, column, rowSpan, colSpan), so the cell
+        // built above spans rows, not columns. Either way the point is that the
+        // span attribute reaches the output on a raw tag instead of an escaped
+        // one; CI confirmed the generator emits rowspan="2" here.
+        assertTrue(markdown.contains("rowspan=\"2\""),
+            "The span attribute should survive on the raw tag. Got: " + markdown);
+    }
+
+    private String generateHtmlMarkdownTable(TableBorder table) throws IOException {
+        File dummyPdf = tempDir.resolve("html-table.pdf").toFile();
+        Files.createFile(dummyPdf.toPath());
+        Config config = new Config();
+        config.setOutputFolder(tempDir.toString());
+        config.setGenerateMarkdown(true);
+
+        try (MarkdownHTMLGenerator generator = new MarkdownHTMLGenerator(dummyPdf, config)) {
+            generator.writeTable(table);
+        }
+
+        return Files.readString(tempDir.resolve("html-table.md")).trim();
+    }
+
     private String generateMarkdownTable(TableBorder table) throws IOException {
         File dummyPdf = tempDir.resolve("test.pdf").toFile();
         Files.createFile(dummyPdf.toPath());
