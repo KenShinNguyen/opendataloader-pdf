@@ -102,6 +102,61 @@ def _non_negative_int(value: str) -> int:
     return parsed
 
 
+class UploadTooLargeError(Exception):
+    """Raised when a streamed upload exceeds the configured size cap."""
+
+    def __init__(self, max_file_size: int):
+        super().__init__(
+            f"File size exceeds maximum allowed ({max_file_size // (1024*1024)}MB)"
+        )
+        self.max_file_size = max_file_size
+
+
+def _unlink_quietly(path: Optional[str]) -> None:
+    """Remove a temp file, tolerating a missing file or an unlink failure."""
+    if not path:
+        return
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        logger.warning("Could not remove temporary upload file %s", path)
+
+
+async def _stream_upload_to_temp(upload, max_file_size: int) -> str:
+    """Stream an uploaded PDF to a temp file and return its path.
+
+    The caller owns the returned path and must unlink it. On *any* failure —
+    the size cap being hit, or the request body raising part-way through (the
+    usual cause being a client that disconnects mid-upload) — the partial file
+    is removed here before the error propagates. Doing the cleanup inside this
+    helper is what keeps aborted uploads from accumulating on disk: the
+    caller's own try/finally cannot cover a failure that happens before the
+    path is handed back.
+
+    Raises:
+        UploadTooLargeError: if max_file_size (> 0) is exceeded.
+    """
+    tmp_path = None
+    total_size = 0
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp_path = tmp.name
+            while True:
+                chunk = await upload.read(UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if max_file_size > 0 and total_size > max_file_size:
+                    raise UploadTooLargeError(max_file_size)
+                tmp.write(chunk)
+    except BaseException:
+        _unlink_quietly(tmp_path)
+        raise
+    return tmp_path
+
+
 # Global converter instance (initialized on startup with CLI options)
 converter = None
 
@@ -626,27 +681,15 @@ def create_app(
             except ValueError:
                 pass
 
-        # Stream upload to temp file and enforce size incrementally
-        tmp_path = None
-        total_size = 0
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            tmp_path = tmp.name
-            while True:
-                chunk = await files.read(UPLOAD_CHUNK_SIZE)
-                if not chunk:
-                    break
-                total_size += len(chunk)
-                if max_file_size > 0 and total_size > max_file_size:
-                    tmp.close()
-                    os.unlink(tmp_path)
-                    return JSONResponse(
-                        {
-                            "status": "failure",
-                            "errors": [f"File size exceeds maximum allowed ({max_file_size // (1024*1024)}MB)"],
-                        },
-                        status_code=413,
-                    )
-                tmp.write(chunk)
+        # Stream upload to temp file and enforce size incrementally. The helper
+        # cleans up the partial file itself if the body fails or the cap is hit.
+        try:
+            tmp_path = await _stream_upload_to_temp(files, max_file_size)
+        except UploadTooLargeError as err:
+            return JSONResponse(
+                {"status": "failure", "errors": [str(err)]},
+                status_code=413,
+            )
 
         try:
             def _do_convert():
@@ -707,8 +750,7 @@ def create_app(
                 status_code=500,
             )
         finally:
-            if tmp_path and os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+            _unlink_quietly(tmp_path)
 
     def _ensure_profile_converters():
         """Lazily initialize profile converters on first use."""
@@ -744,15 +786,16 @@ def create_app(
         """
         _ensure_profile_converters()
 
-        # Stream upload to temp file
-        tmp_path = None
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            tmp_path = tmp.name
-            while True:
-                chunk = await files.read(UPLOAD_CHUNK_SIZE)
-                if not chunk:
-                    break
-                tmp.write(chunk)
+        # Stream upload to temp file. This endpoint enforces the same size cap
+        # as /v1/convert/file — without one, a client can stream unlimited
+        # bytes to disk through the profiler.
+        try:
+            tmp_path = await _stream_upload_to_temp(files, max_file_size)
+        except UploadTooLargeError as err:
+            return JSONResponse(
+                {"status": "failure", "errors": [str(err)]},
+                status_code=413,
+            )
 
         try:
             results = {}
@@ -798,8 +841,7 @@ def create_app(
                 status_code=500,
             )
         finally:
-            if tmp_path and os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+            _unlink_quietly(tmp_path)
 
     return app
 
