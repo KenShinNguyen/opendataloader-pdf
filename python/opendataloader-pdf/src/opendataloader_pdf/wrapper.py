@@ -39,7 +39,8 @@ def run(
         input_path: Path to the input PDF file or folder.
         output_folder: Path to the output folder. Defaults to the input folder.
         password: Password for the PDF file.
-        replace_invalid_chars: Character to replace invalid or unrecognized characters (e.g., , \\u0000) with.
+        replace_invalid_chars: Character to replace invalid or unrecognized
+                               characters (e.g., , \\u0000) with.
         generate_markdown: If True, generates a Markdown output file.
         generate_html: If True, generates an HTML output file.
         generate_annotated_pdf: If True, generates an annotated PDF output file.

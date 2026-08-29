@@ -1,9 +1,9 @@
 """
 Low-level JAR runner for opendataloader-pdf.
 """
+import importlib.resources as resources
 import subprocess
 import sys
-import importlib.resources as resources
 from typing import List
 
 # The consistent name of the JAR file bundled with the package
@@ -82,7 +82,8 @@ def run_jar(args: List[str], quiet: bool = False) -> str:
 
     except FileNotFoundError:
         print(
-            "Error: 'java' command not found. Please ensure Java is installed and in your system's PATH.",
+            "Error: 'java' command not found. Please ensure Java is installed "
+            "and in your system's PATH.",
             file=sys.stderr,
         )
         raise

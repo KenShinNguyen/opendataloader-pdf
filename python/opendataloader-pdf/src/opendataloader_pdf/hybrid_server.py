@@ -473,11 +473,12 @@ def create_converter(
                   languages are used.
         enrich_formula: If True, enable formula enrichment (LaTeX extraction).
         enrich_picture_description: If True, enable picture description (alt text generation).
-        picture_description_prompt: Custom prompt forwarded to the VLM. If None or blank/whitespace-only, docling's default prompt is used.
-        device: Accelerator device for model inference. Options: "auto", "cpu", "cuda", "mps", "xpu".
+        picture_description_prompt: Custom prompt forwarded to the VLM. If None or
+                                    blank/whitespace-only, docling's default prompt is used.
+        device: Accelerator device for model inference.
+                Options: "auto", "cpu", "cuda", "mps", "xpu".
                 "auto" lets Docling select the best available device. Default: "auto".
     """
-    from docling.datamodel.accelerator_options import AcceleratorOptions
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import (
         AcceleratorOptions,
@@ -589,7 +590,8 @@ def create_app(
         ocr_lang: List of OCR language codes (engine-specific format).
         enrich_formula: If True, enable formula enrichment (LaTeX extraction).
         enrich_picture_description: If True, enable picture description (alt text generation).
-        picture_description_prompt: Custom prompt forwarded to the VLM. If None or blank/whitespace-only, docling's default prompt is used.
+        picture_description_prompt: Custom prompt forwarded to the VLM. If None or
+                                    blank/whitespace-only, docling's default prompt is used.
         max_file_size: Maximum file size in bytes. 0 means no limit (default).
         device: Accelerator device for model inference ("auto", "cpu", "cuda", "mps", "xpu").
     """
@@ -713,8 +715,14 @@ def create_app(
             # Extract status and errors from Docling ConversionResult
             from docling.datamodel.base_models import ConversionStatus
 
-            status_value = result.status.value if hasattr(result.status, "value") else str(result.status)
-            errors = [getattr(e, "error_message", str(e)) for e in result.errors] if result.errors else []
+            status_value = (
+                result.status.value if hasattr(result.status, "value") else str(result.status)
+            )
+            errors = (
+                [getattr(e, "error_message", str(e)) for e in result.errors]
+                if result.errors
+                else []
+            )
 
             # Get total page count for accurate failed-page detection
             input_page_count = getattr(result.input, "page_count", None) if result.input else None
@@ -955,7 +963,10 @@ def main():
         "--picture-description-prompt",
         type=str,
         default=None,
-        help="Custom prompt for picture description. If unset or blank/whitespace-only, uses docling's default prompt.",
+        help=(
+            "Custom prompt for picture description. If unset or blank/whitespace-only, "
+            "uses docling's default prompt."
+        ),
     )
     parser.add_argument(
         "--max-file-size",
@@ -968,7 +979,10 @@ def main():
         type=str,
         default="auto",
         choices=["auto", "cpu", "cuda", "mps", "xpu"],
-        help="Accelerator device for model inference: auto (default), cpu, cuda, mps (Apple Silicon), xpu (Intel GPU).",
+        help=(
+            "Accelerator device for model inference: auto (default), cpu, cuda, "
+            "mps (Apple Silicon), xpu (Intel GPU)."
+        ),
     )
     args = parser.parse_args()
 
