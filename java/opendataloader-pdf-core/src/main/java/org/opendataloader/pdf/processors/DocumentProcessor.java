@@ -66,6 +66,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.logging.Level;
@@ -77,6 +78,15 @@ import java.util.logging.Logger;
  */
 public class DocumentProcessor {
     private static final Logger LOGGER = Logger.getLogger(DocumentProcessor.class.getCanonicalName());
+
+    /**
+     * How long {@link #shutdownPool} waits for page workers to finish before
+     * interrupting them. On the normal path every task has already been awaited
+     * via Future.get(), so termination is immediate and this budget is never
+     * touched; it only bounds the error path, where a task may still be running
+     * when another one has already thrown.
+     */
+    private static final long POOL_SHUTDOWN_TIMEOUT_SECONDS = 30;
 
     /**
      * Releases PDF resources to prevent file locks and memory leaks.
@@ -429,9 +439,44 @@ public class DocumentProcessor {
         } catch (Exception e) {
             throw new IOException("Parallel page processing failed", e);
         } finally {
-            pool.shutdown();
+            shutdownPool(pool);
         }
         return contents;
+    }
+
+    /**
+     * Shuts the per-document page pool down and waits for its workers to die.
+     *
+     * <p>{@code shutdown()} on its own only *initiates* termination and returns
+     * at once, so processFile used to return while its workers were still alive.
+     * That matters because {@code propagateState} copies this document's state
+     * into every worker's ThreadLocals — the PDDocument that closePdfResources()
+     * has just closed, the shared headings list, the embedded-image byte map —
+     * and a ThreadLocalMap is only released when its thread dies. Since the pool
+     * is created per document and never reused, waiting for termination here is
+     * what actually drops those references, and is why there is no separate
+     * per-worker cleanup: a worker's ThreadLocals cannot be reached from another
+     * thread, but they die with it.
+     *
+     * <p>Package-private so the shutdown contract can be tested on its own.
+     *
+     * @param pool the pool to terminate
+     */
+    static void shutdownPool(ForkJoinPool pool) {
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(POOL_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                LOGGER.log(Level.WARNING,
+                    "Page processing workers did not finish within {0}s; interrupting them.",
+                    POOL_SHUTDOWN_TIMEOUT_SECONDS);
+                pool.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            // Abandon the wait, but never swallow the interrupt: a CLI being
+            // cancelled or an embedding server shutting down still has to see it.
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
