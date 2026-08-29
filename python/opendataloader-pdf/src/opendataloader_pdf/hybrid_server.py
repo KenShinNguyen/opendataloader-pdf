@@ -42,6 +42,10 @@ Usage:
     # With picture description (alt text generation)
     opendataloader-pdf-hybrid --enrich-picture-description
 
+    # Reachable from other machines: uploads are capped at 100MB unless
+    # --max-file-size says otherwise
+    opendataloader-pdf-hybrid --host 0.0.0.0
+
     # Combined: OCR + enrichments
     opendataloader-pdf-hybrid --ocr-lang "en" --enrich-formula --enrich-picture-description
 
@@ -91,7 +95,13 @@ DEFAULT_PORT = 5002
 
 # Hosts that keep the server reachable only from this machine.
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
-MAX_FILE_SIZE = 0  # No file size limit by default (0 = unlimited)
+# No upload cap by default on a loopback bind (0 = unlimited): the local
+# workflow routinely feeds this server large PDFs and nobody else can reach it.
+MAX_FILE_SIZE = 0
+# A bind anyone on the network can reach gets a finite cap instead, because the
+# server has no authentication and writes every upload to disk before parsing
+# it. An explicit --max-file-size (0 included) always wins over this.
+PUBLIC_BIND_MAX_FILE_SIZE_MB = 100
 UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1MB chunks for streaming upload
 
 # OCR engine kinds we filter out from `--ocr-engine` choices.
@@ -133,9 +143,29 @@ def warn_if_publicly_bound(host: str, max_file_size_bytes: int) -> None:
     )
     if max_file_size_bytes == 0:
         logger.warning(
-            "Uploads are unlimited (--max-file-size 0) on a non-loopback "
-            "bind; a single client can fill the disk. Set --max-file-size."
+            "Uploads are unlimited on a non-loopback bind because "
+            "--max-file-size 0 was passed explicitly; a single client can "
+            "fill the disk."
         )
+
+
+def resolve_max_file_size_mb(host: str, requested_mb: Optional[int]) -> int:
+    """Pick the upload cap in MB for this bind.
+
+    An explicit --max-file-size always wins, including an explicit 0: an
+    operator who asks for unlimited uploads on a public bind gets them, and a
+    warning. Left unset, the cap depends on who can reach the port — nothing
+    for loopback, PUBLIC_BIND_MAX_FILE_SIZE_MB for anything wider.
+
+    Kept out of main() for the same reason as warn_if_publicly_bound: main()
+    imports torch to detect an accelerator, which has no place in a test of
+    this rule.
+    """
+    if requested_mb is not None:
+        return requested_mb
+    if host in _LOOPBACK_HOSTS:
+        return MAX_FILE_SIZE
+    return PUBLIC_BIND_MAX_FILE_SIZE_MB
 
 
 def parse_page_ranges(value: Optional[str]) -> Optional[tuple]:
@@ -923,11 +953,12 @@ def create_app(
     return app
 
 
-def main():
-    """Run the server."""
-    _check_dependencies()
-    import uvicorn
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Build the CLI parser.
 
+    Split out of main() so tests can assert what a flag defaults to without
+    starting a server: main() probes the OCR engine and imports torch.
+    """
     parser = argparse.ArgumentParser(description="Docling Fast Server for opendataloader-pdf")
     parser.add_argument(
         "--host",
@@ -1040,8 +1071,14 @@ def main():
     parser.add_argument(
         "--max-file-size",
         type=_non_negative_int,
-        default=MAX_FILE_SIZE,
-        help="Maximum upload file size in MB. 0 means no limit (default: 0).",
+        # Left as None so an explicit "0" is distinguishable from "unset";
+        # resolve_max_file_size_mb turns that into the cap for this bind.
+        default=None,
+        help=(
+            "Maximum upload file size in MB. 0 means no limit. Default: no "
+            f"limit on a loopback bind, {PUBLIC_BIND_MAX_FILE_SIZE_MB} on any "
+            "other host."
+        ),
     )
     parser.add_argument(
         "--device",
@@ -1053,6 +1090,15 @@ def main():
             "mps (Apple Silicon), xpu (Intel GPU)."
         ),
     )
+    return parser
+
+
+def main():
+    """Run the server."""
+    _check_dependencies()
+    import uvicorn
+
+    parser = build_arg_parser()
     args = parser.parse_args()
 
     # Parse ocr_lang
@@ -1120,7 +1166,8 @@ def main():
         logger.info(f"Device override: --device {args.device}")
 
     # Convert MB to bytes (0 stays 0 = unlimited)
-    max_file_size_bytes = args.max_file_size * 1024 * 1024 if args.max_file_size > 0 else 0
+    max_file_size_mb = resolve_max_file_size_mb(args.host, args.max_file_size)
+    max_file_size_bytes = max_file_size_mb * 1024 * 1024 if max_file_size_mb > 0 else 0
 
     logger.info(f"Starting Docling Fast Server on http://{args.host}:{args.port}")
     warn_if_publicly_bound(args.host, max_file_size_bytes)
@@ -1129,8 +1176,13 @@ def main():
         f"OCR settings: do_ocr={not args.no_ocr}, ocr_engine={args.ocr_engine}, "
         f"force_ocr={args.force_ocr}, lang={ocr_lang or 'default'}{psm_str}"
     )
-    if max_file_size_bytes > 0:
-        logger.info(f"Max file size: {args.max_file_size}MB")
+    if max_file_size_bytes > 0 and args.max_file_size is None:
+        logger.info(
+            f"Max file size: {max_file_size_mb}MB (default for a non-loopback "
+            "bind; pass --max-file-size to change it)"
+        )
+    elif max_file_size_bytes > 0:
+        logger.info(f"Max file size: {max_file_size_mb}MB")
     else:
         logger.info("Max file size: unlimited")
     if enrichments:

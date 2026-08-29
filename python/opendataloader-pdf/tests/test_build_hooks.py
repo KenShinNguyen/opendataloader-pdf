@@ -88,3 +88,76 @@ def test_multiple_jars_error_says_how_to_recover(tmp_path, monkeypatch):
     assert "opendataloader-pdf-cli-0.0.0.jar" in message
     assert "opendataloader-pdf-cli-1.2.3.jar" in message
     assert "mvn clean package" in message
+
+
+def _monorepo_checkout(tmp_path):
+    """A minimal monorepo layout: the package dir plus the files the hook copies."""
+    pkg = tmp_path / "python" / "opendataloader-pdf"
+    (pkg / "src" / "opendataloader_pdf").mkdir(parents=True)
+    (tmp_path / "README.md").write_text("# readme", encoding="utf-8")
+    (tmp_path / "LICENSE").write_text("license", encoding="utf-8")
+    (tmp_path / "NOTICE").write_text("notice", encoding="utf-8")
+    (tmp_path / "THIRD_PARTY").mkdir()
+    (tmp_path / "THIRD_PARTY" / "dep.txt").write_text("dep", encoding="utf-8")
+    return pkg
+
+
+def _stage_previous_build(pkg, jar_bytes):
+    """Leave an earlier build's artifacts where the hook stages them."""
+    src = pkg / "src" / "opendataloader_pdf"
+    (src / "jar").mkdir(parents=True, exist_ok=True)
+    staged_jar = src / "jar" / "opendataloader-pdf-cli.jar"
+    staged_jar.write_bytes(jar_bytes)
+    (src / "LICENSE").write_text("license", encoding="utf-8")
+    (src / "NOTICE").write_text("notice", encoding="utf-8")
+    (src / "THIRD_PARTY").mkdir(exist_ok=True)
+    return staged_jar
+
+
+def _build(pkg):
+    from hatch_build import CustomBuildHook
+
+    CustomBuildHook(str(pkg), {}, None, None, None, None).initialize("standard", {})
+
+
+def test_a_source_build_replaces_the_previous_builds_jar(tmp_path):
+    """Build 2 must package build 2's JAR.
+
+    The staged copy under src/opendataloader_pdf/jar/ is gitignored and nothing
+    deletes it — build-python.sh only cleans dist/ — so skipping the copy
+    because the file exists shipped the *previous* JAR. build-all.sh hits this
+    every time: it rebuilds Java at a new version, then builds Python.
+    """
+    pkg = _monorepo_checkout(tmp_path)
+    staged_jar = _stage_previous_build(pkg, b"jar from build 1")
+    target = tmp_path / "java" / "opendataloader-pdf-cli" / "target"
+    target.mkdir(parents=True)
+    (target / "opendataloader-pdf-cli-2.0.0.jar").write_bytes(b"jar from build 2")
+
+    _build(pkg)
+
+    assert staged_jar.read_bytes() == b"jar from build 2"
+
+
+def test_an_sdist_build_keeps_its_packaged_jar(tmp_path):
+    """An extracted sdist has no java/ tree, only the JAR it shipped with."""
+    pkg = tmp_path / "opendataloader_pdf-1.0.0"
+    (pkg / "src" / "opendataloader_pdf").mkdir(parents=True)
+    (pkg / "README.md").write_text("# readme", encoding="utf-8")
+    staged_jar = _stage_previous_build(pkg, b"jar from the sdist")
+
+    _build(pkg)
+
+    assert staged_jar.read_bytes() == b"jar from the sdist"
+
+
+def test_an_sdist_missing_its_packaged_files_says_what_is_wrong(tmp_path):
+    """Neither a monorepo nor a complete sdist: fail loudly, not with a bad JAR."""
+    from hatch_build import CustomBuildHook
+
+    pkg = tmp_path / "opendataloader_pdf-1.0.0"
+    (pkg / "src" / "opendataloader_pdf").mkdir(parents=True)
+    (pkg / "README.md").write_text("# readme", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="No java/ source tree"):
+        CustomBuildHook(str(pkg), {}, None, None, None, None).initialize("standard", {})
