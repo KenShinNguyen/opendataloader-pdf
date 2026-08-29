@@ -202,28 +202,33 @@ public class MarkdownGeneratorTest {
     }
 
     @Test
-    void testGetCorrectMarkdownString_escapesAmpersand() {
+    void testGetCorrectMarkdownString_leavesAmpersandAlone() {
+        // '&' carries no meaning in Markdown, so escaping it only corrupted the
+        // text for readers that consume this output as text rather than HTML.
         MarkdownGenerator generator = newGeneratorForEscaping();
-        assertEquals("A &amp; B", generator.getCorrectMarkdownString("A & B"));
+        assertEquals("R&D spending", generator.getCorrectMarkdownString("R&D spending"));
+        assertEquals("A & B", generator.getCorrectMarkdownString("A & B"));
     }
 
     @Test
-    void testGetCorrectMarkdownString_escapesLessThan() {
+    void testGetCorrectMarkdownString_leavesComparisonOperatorsAlone() {
+        // A '<' followed by a space cannot open a tag, so it needs no escaping.
         MarkdownGenerator generator = newGeneratorForEscaping();
-        assertEquals("a &lt; b", generator.getCorrectMarkdownString("a < b"));
+        assertEquals("a < b", generator.getCorrectMarkdownString("a < b"));
+        assertEquals("5 < 10 and x > 3", generator.getCorrectMarkdownString("5 < 10 and x > 3"));
+        assertEquals("x <= y", generator.getCorrectMarkdownString("x <= y"));
     }
 
     @Test
-    void testGetCorrectMarkdownString_escapesGreaterThan() {
+    void testGetCorrectMarkdownString_escapesATagThatCouldOpenHtml() {
+        // Raw HTML in Markdown reaches a renderer intact, so a '<' that could
+        // start a tag is neutralised with a backslash, which CommonMark renders
+        // as a literal '<'.
         MarkdownGenerator generator = newGeneratorForEscaping();
-        assertEquals("a &gt; b", generator.getCorrectMarkdownString("a > b"));
-    }
-
-    @Test
-    void testGetCorrectMarkdownString_escapesAllReservedCharsTogether() {
-        MarkdownGenerator generator = newGeneratorForEscaping();
-        assertEquals("&lt;tag&gt; A &amp; B &lt;/tag&gt;",
-            generator.getCorrectMarkdownString("<tag> A & B </tag>"));
+        assertEquals("\\<script>alert(1)\\</script>",
+            generator.getCorrectMarkdownString("<script>alert(1)</script>"));
+        assertEquals("report \\<draft> & notes",
+            generator.getCorrectMarkdownString("report <draft> & notes"));
     }
 
     @Test
@@ -233,12 +238,10 @@ public class MarkdownGeneratorTest {
     }
 
     @Test
-    void testGetCorrectMarkdownString_doubleEscapesExistingEntities() {
-        // Documents current behavior: since '&' is escaped first, any text that
-        // already contains an HTML entity (e.g. "&amp;") gets double-escaped
-        // (e.g. "&amp;amp;"). This is a known limitation, not necessarily the
-        // desired long-term behavior.
+    void testGetCorrectMarkdownString_doesNotDoubleEscapeExistingEntities() {
+        // Previously '&' was escaped first, so an entity already present in the
+        // PDF came out doubled: "&amp;" became "&amp;amp;".
         MarkdownGenerator generator = newGeneratorForEscaping();
-        assertEquals("&amp;amp;", generator.getCorrectMarkdownString("&amp;"));
+        assertEquals("&amp;", generator.getCorrectMarkdownString("&amp;"));
     }
 }
