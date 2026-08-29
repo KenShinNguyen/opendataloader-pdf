@@ -66,7 +66,12 @@ echo "[3/3] Node.js: Building and testing..."
 echo "----------------------------------------"
 
 cd "$ROOT_DIR/node/opendataloader-pdf"
-pnpm version "$VERSION" --no-git-tag-version --allow-same-version
+# `pnpm version` refuses to run against a dirty working tree
+# (ERR_PNPM_UNCLEAN_WORKING_TREE) — but steps [1/3] and [2/3] above have
+# already written into the tree by design, so it can never be clean by the
+# time we get here. `pnpm pkg set` writes the same field in package.json with
+# no git coupling, matching how the Python version is set above.
+pnpm pkg set version="$VERSION"
 "$SCRIPT_DIR/build-node.sh"
 
 echo "[3/3] Node.js: Done"
