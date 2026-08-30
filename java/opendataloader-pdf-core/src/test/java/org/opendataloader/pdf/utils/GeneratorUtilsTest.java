@@ -159,11 +159,80 @@ class GeneratorUtilsTest {
     }
 
     @Test
-    void testNeedsChunkSeparator_trueOnlyWhenNeitherSideHasWhitespace() {
+    void testNeedsChunkSeparator_trueOnlyWhenNeitherSideHasWhitespaceOrATrailingDash() {
         assertEquals(true, GeneratorUtils.needsChunkSeparator(new StringBuilder("0.24%"), "of all"));
         assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("2) "), "Variazione"));
         assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("2)"), " Variazione"));
         assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder(), "Variazione"));
         assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("2)"), ""));
+        assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("well-"), "intentioned"));
+        assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("congru\u00AD"), "ence"));
+        assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("lenses\u2014"), "past"));
+    }
+
+    /**
+     * A hyphen that is not sitting at any kind of join boundary - a chunk boundary or a
+     * line break - is never examined by any of this join logic at all; it is just part of
+     * a chunk's own value, passed through unchanged. So a compound word's own hyphen
+     * ("well-intentioned") survives regardless of where within a line it happens to fall,
+     * in contrast to a hyphen that genuinely does sit at a wrap point (elided by
+     * testGetTextFromLines_elidesHyphenMinusAtLineBreak above, since that one really is
+     * splitting one word across two lines).
+     */
+    @Test
+    void testGetTextFromLines_keepsAnInternalHyphenThatIsNotAtALineBreak() {
+        TextLine line = new TextLine(new TextChunk("a well-intentioned plan"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line), OutputType.JSON);
+
+        assertEquals("a well-intentioned plan", text);
+    }
+
+    /**
+     * Same word, but a style change (bold, a link, a color run) splits it into two chunks
+     * on the same line right at its own hyphen ("well-" + "intentioned") - the ordinary
+     * chunk-boundary rule alone would read this as a missing word-gap and insert a space
+     * ("well- intentioned"), so needsChunkSeparator treats a trailing hyphen or dash the
+     * same way appendLineJoin already does at a line break: nothing needs to go right
+     * after one.
+     */
+    @Test
+    void testGetTextFromLines_keepsAnInternalHyphenSplitAcrossChunksAtTheHyphenItself() {
+        TextLine line = new TextLine();
+        line.add(new TextChunk("well-"));
+        line.add(new TextChunk("intentioned"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line), OutputType.JSON);
+
+        assertEquals("well-intentioned", text);
+    }
+
+    /** Same em-dash rule as testGetTextFromLines_keepsEmDashAtLineBreak, this book's own wording. */
+    @Test
+    void testGetTextFromLines_keepsEmDashAtLineBreak_lensesPast() {
+        TextLine line1 = new TextLine(new TextChunk("through these lenses\u2014"));
+        TextLine line2 = new TextLine(new TextChunk("past experiences shape how we see the present"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line1, line2), OutputType.JSON);
+
+        assertEquals("through these lenses\u2014past experiences shape how we see the present", text);
+    }
+
+    /**
+     * End-to-end through the canonical join, not just the isolated repairSplitUrls
+     * function LineJoinRepairTest exercises directly: a URL split across a line break
+     * comes out whole, because GeneratorUtils.getTextFromLines/getTextFromTextNode run
+     * LineJoinRepair.repairSplitUrls over the same joined text every OutputType reads,
+     * after the join, not before - JSON, Markdown and HTML all see the same repair over
+     * the same underlying text.
+     */
+    @Test
+    void testGetTextFromLines_repairsAUrlSplitAcrossALineThroughTheCanonicalJoin() {
+        TextLine line1 = new TextLine(new TextChunk("See https://www."));
+        TextLine line2 = new TextLine(new TextChunk("chainalysis.com/ko/blog/2023-report for details."));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line1, line2), OutputType.JSON);
+
+        assertEquals("See https://www.chainalysis.com/ko/blog/2023-report for details.", text);
     }
 }

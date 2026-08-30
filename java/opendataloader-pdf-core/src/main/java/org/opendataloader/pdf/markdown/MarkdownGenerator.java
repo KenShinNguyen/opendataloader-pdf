@@ -381,14 +381,19 @@ public class MarkdownGenerator implements Closeable {
      * <p>List detection runs on geometry, not meaning, and a paragraph that happens to
      * open with a decimal number reads the same way a genuine one-item list does: text
      * starting with digits, optionally a delimiter. "0.24% of all crypto transactions..."
-     * was detected this way with a reported label of "0." - correct as a text span, but
-     * the "0." is the start of "0.24", not a list marker. Reusing it verbatim split the
-     * number itself: "0." became the marker and ".24%" was left as the item's text.
+     * was detected this way - correct as a text span, but the reported label is the start
+     * of "0.24", not a list marker. Reusing it verbatim split the number itself: the label
+     * became the marker and the rest of "0.24%" was left dangling as the item's text
+     * ("0. .24% of all crypto..." when the reported span was just "0"; "0..24%..." if it
+     * had swallowed the dot too).
      *
-     * <p>A genuine list label is never immediately followed by another digit - "1. Desire
-     * to belong" is followed by a space, and no real numbering scheme continues straight
-     * into more digits the way a decimal fraction does. That single check is enough to
-     * tell the two apart without needing to know anything about the document.
+     * <p>The two-digit-count check below - looking at where itemText's leading digit run
+     * actually ends, not just at the reported labelLength - catches both spans: whichever
+     * one the geometry layer reports, "0" or "0.", the character(s) right after that
+     * digit run are a delimiter immediately followed by another digit, and no genuine
+     * numbering scheme continues a label straight into a decimal fraction that way -
+     * "1. Desire to belong" is followed by a space, not "1.5". That's enough to tell the
+     * two apart without needing to know anything else about the document.
      */
     private static String readLabel(String itemText, int labelLength) {
         if (labelLength <= 0 || labelLength > itemText.length()) {
@@ -414,7 +419,32 @@ public class MarkdownGenerator implements Closeable {
         if (labelLength < itemText.length() && Character.isDigit(itemText.charAt(labelLength))) {
             return null;
         }
+        if (continuesAsDecimalFraction(itemText, digits)) {
+            return null;
+        }
         return label;
+    }
+
+    /**
+     * Whether itemText, read from the end of its own leading digit run (not just up to
+     * whatever labelLength the geometry layer reported), continues straight into a
+     * decimal fraction: a '.' or ',' immediately followed by another digit. The geometry
+     * layer can report either "0" or "0." as the label for "0.24%..." - the digit run
+     * itself is the same either way, so checking from there catches the fraction
+     * regardless of exactly where the reported span stopped, including the "0" case the
+     * digit-immediately-after check above doesn't reach (the character right after "0" is
+     * the delimiter, not a digit).
+     */
+    private static boolean continuesAsDecimalFraction(String itemText, int leadingDigits) {
+        if (leadingDigits >= itemText.length()) {
+            return false;
+        }
+        char afterDigits = itemText.charAt(leadingDigits);
+        if (afterDigits != '.' && afterDigits != ',') {
+            return false;
+        }
+        int afterDelimiter = leadingDigits + 1;
+        return afterDelimiter < itemText.length() && Character.isDigit(itemText.charAt(afterDelimiter));
     }
 
     /**
