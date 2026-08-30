@@ -18,6 +18,7 @@ package org.opendataloader.pdf.json.serializers;
 import com.fasterxml.jackson.core.JsonGenerator;
 import org.opendataloader.pdf.hybrid.ElementMetadata;
 import org.opendataloader.pdf.json.JsonName;
+import org.opendataloader.pdf.utils.LineJoinRepair;
 import org.opendataloader.pdf.utils.TextNodeUtils;
 import org.verapdf.tools.TaggedPDFConstants;
 import org.verapdf.wcag.algorithms.entities.IObject;
@@ -203,7 +204,7 @@ public class SerializerUtil {
         if (textColor != null) {
             jsonGenerator.writeStringField(JsonName.TEXT_COLOR, Arrays.toString(textColor));
         }
-        jsonGenerator.writeStringField(JsonName.CONTENT, textNode.getValue());
+        jsonGenerator.writeStringField(JsonName.CONTENT, LineJoinRepair.repairSplitUrls(textNode.getValue()));
         if (textNode.isHiddenText()) {
             jsonGenerator.writeBooleanField(JsonName.HIDDEN_TEXT, true);
         }

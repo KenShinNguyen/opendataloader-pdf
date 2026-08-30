@@ -44,4 +44,18 @@ public class TextNodeStatistics {
         double boost = fontWeightStatistics.getBoost(textNode.getFontWeight());
         return boost * config.fontWeightRarityBoost;
     }
+
+    /**
+     * @return the font size of ordinary body text, or 0.0 when no text node was added
+     */
+    public double getDominantFontSize() {
+        return fontSizeStatistics.getDominantScore();
+    }
+
+    /**
+     * @return the font weight of ordinary body text, or 0.0 when no text node was added
+     */
+    public double getDominantFontWeight() {
+        return fontWeightStatistics.getDominantScore();
+    }
 }
