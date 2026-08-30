@@ -8,7 +8,7 @@
  * `--to-stdout | jq` when the JAR then exits non-zero.
  *
  * Driving this through the real CLI needs a non-zero exit *after* a large
- * stdout payload. Rather than depend on the Maven-built JAR, the test copies
+ * stdout payload, with the payload still queued when the CLI exits. Rather than depend on the Maven-built JAR, the test copies
  * dist/ into a temp package layout and puts a fake `java` first on PATH. The
  * CLI resolves its JAR as `<dist>/../lib/`, so the copy makes it pick up a
  * placeholder there — the repo's own lib/ is never touched, which keeps this
@@ -17,6 +17,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, spawnSync } from 'child_process';
+import { Writable } from 'stream';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -36,27 +37,71 @@ let sandboxDir: string;
 let cliPath: string;
 let inputPdf: string;
 
+/**
+ * The test needs the CLI's writes to still be queued when it exits — the state
+ * process.exit() used to discard — which means nothing may drain its stdout for
+ * a moment. Holding that off by leaving the stream paused and attaching the
+ * reader on a timer loses the race: the stream is sometimes read to completion
+ * and ended before the timer fires, and the payload is discarded with it, so the
+ * test reads zero bytes and fails on a CLI that is perfectly correct.
+ *
+ * Attaching the sink at spawn removes the race — every chunk is captured the
+ * moment it arrives. Backpressure comes from the sink not acknowledging its
+ * writes for the first 500ms instead: the pipe still fills and the CLI still
+ * queues, but nothing is read and thrown away. A CLI that discards its buffer on
+ * exit still arrives truncated, which is what the assertion is looking for.
+ */
+const READ_HOLD_MS = 500;
+
 function runCli(args: string[]): Promise<{ stdout: string; exitCode: number | null }> {
   return new Promise((resolve, reject) => {
     const proc = spawn('node', [cliPath, ...args], {
       // Prepend the shim dir so our fake `java` wins over any real one.
       env: { ...process.env, PATH: `${shimDir}${path.delimiter}${process.env.PATH ?? ''}` },
     });
-    let stdout = '';
-    // Deliberately do NOT read straight away. The OS pipe buffer (~64KB) fills,
-    // so the CLI's own writes to process.stdout queue inside Node — which is
-    // exactly the state process.exit() used to discard. A test that drains
-    // eagerly never lets the backlog build and so cannot see the truncation.
-    proc.stdout.pause();
-    setTimeout(() => {
-      proc.stdout.on('data', (chunk: Buffer) => {
-        stdout += chunk.toString();
-      });
-      proc.stdout.resume();
-    }, 500);
+
+    const chunks: Buffer[] = [];
+    const heldWrites: Array<() => void> = [];
+    let acknowledgeWrites = false;
+    const sink = new Writable({
+      // Ack one chunk at a time so backpressure reaches the pipe immediately.
+      highWaterMark: 1,
+      write(chunk: Buffer, _encoding, done) {
+        chunks.push(chunk);
+        if (acknowledgeWrites) {
+          done();
+        } else {
+          heldWrites.push(done);
+        }
+      },
+    });
+    const holdTimer = setTimeout(() => {
+      acknowledgeWrites = true;
+      heldWrites.splice(0).forEach((done) => done());
+    }, READ_HOLD_MS);
+
     // Drain stderr so the child never blocks on a full pipe.
     proc.stderr.on('data', () => {});
-    proc.on('close', (code) => resolve({ stdout, exitCode: code }));
+    proc.stdout.pipe(sink);
+
+    let exitCode: number | null = null;
+    let exited = false;
+    let sinkFinished = false;
+    const settle = () => {
+      if (exited && sinkFinished) {
+        clearTimeout(holdTimer);
+        resolve({ stdout: Buffer.concat(chunks).toString(), exitCode });
+      }
+    };
+    sink.on('finish', () => {
+      sinkFinished = true;
+      settle();
+    });
+    proc.on('exit', (code) => {
+      exitCode = code;
+      exited = true;
+      settle();
+    });
     proc.on('error', reject);
   });
 }
