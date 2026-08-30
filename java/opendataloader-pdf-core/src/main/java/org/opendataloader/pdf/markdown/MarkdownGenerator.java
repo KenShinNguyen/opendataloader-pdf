@@ -67,12 +67,22 @@ public class MarkdownGenerator implements Closeable {
     protected boolean embedImages = false;
     protected String imageFormat = Config.IMAGE_FORMAT_PNG;
     protected boolean includeHeaderFooter = false;
+    /**
+     * Indent carried by the list currently being written, so a list nested under a list
+     * item lines up under that item's text. Empty at the top level.
+     */
+    protected String listIndent = "";
     protected static final String strikethroughTextMD = "~~";
     /**
      * A '<' only opens a tag when a name-like character follows it, so that is
      * the only case worth escaping.
      */
     private static final Pattern TAG_OPENING = Pattern.compile("<(?=[A-Za-z!/?])");
+    /**
+     * Longest run of digits still reused as a Markdown ordered-list marker. A longer
+     * "number" is not numbering, and CommonMark caps ordered-list markers at 9 digits.
+     */
+    private static final int MAX_LIST_NUMBER_DIGITS = 9;
 
     MarkdownGenerator(File inputPdf, Config config) throws IOException {
         String cutPdfFileName = inputPdf.getName();
@@ -295,14 +305,17 @@ public class MarkdownGenerator implements Closeable {
     }
 
     protected void writeList(PDFList list) throws IOException {
+        String parentIndent = listIndent;
         for (ListItem item : list.getListItems()) {
             String itemText = GeneratorUtils.getTextFromLines(item.getLines(), OutputType.MD);
+            String marker = "";
             if (!isInsideTable()) {
-                markdownWriter.write(MarkdownSyntax.LIST_ITEM);
-                markdownWriter.write(MarkdownSyntax.SPACE);
-                if (NumberingStyleNames.UNORDERED.equals(list.getNumberingStyle())) {
-                    itemText = itemText.substring(item.getLabelLength());
+                marker = listItemMarker(list.getNumberingStyle(), itemText, item.getLabelLength());
+                if (markerReplacesLabel(list.getNumberingStyle(), marker)) {
+                    itemText = stripListLabel(itemText, item.getLabelLength());
                 }
+                markdownWriter.write(parentIndent);
+                markdownWriter.write(marker);
             }
             markdownWriter.write(getCorrectMarkdownString(itemText));
             writeLineBreak();
@@ -310,9 +323,111 @@ public class MarkdownGenerator implements Closeable {
             List<IObject> itemContents = item.getContents();
             if (!itemContents.isEmpty()) {
                 writeLineBreak();
+                // Content of a nested list has to start at or past the column where this
+                // item's own text starts, or Markdown reads it as a sibling of this item
+                // instead of a child of it.
+                listIndent = parentIndent + repeatSpace(marker.length());
                 writeContents(itemContents, false);
+                listIndent = parentIndent;
             }
         }
+        listIndent = parentIndent;
+    }
+
+    /**
+     * The Markdown marker to open a list item with.
+     *
+     * <p>Every list used to open with "-", which left an ordered list carrying two
+     * markers: the bullet, and the label still sitting in the item's own text
+     * ("- 1. Desire to belong"). Markdown can express decimal numbering natively, so a
+     * decimal list reuses the document's own label as the marker - which also keeps the
+     * numbering of a list split across a page break running on from where it left off,
+     * rather than restarting at 1.
+     *
+     * <p>Roman numerals and letters have no Markdown equivalent. Rendering them as
+     * decimals would renumber the document, so those keep the bullet and leave the label
+     * in the text where it can still be read.
+     */
+    static String listItemMarker(String numberingStyle, String itemText, int labelLength) {
+        String bullet = MarkdownSyntax.LIST_ITEM + MarkdownSyntax.SPACE;
+        if (!NumberingStyleNames.ARABIC_NUMBERS.equals(numberingStyle)) {
+            return bullet;
+        }
+        String label = readLabel(itemText, labelLength);
+        if (label == null) {
+            return bullet;
+        }
+        char last = label.charAt(label.length() - 1);
+        if (last != '.' && last != ')') {
+            label = label + '.';
+        }
+        return label + MarkdownSyntax.SPACE;
+    }
+
+    /**
+     * Whether the marker already stands in for the item's label, so the label has to
+     * come off the item's text: a bullet replaces it, and a reused decimal label would
+     * otherwise be written twice.
+     */
+    static boolean markerReplacesLabel(String numberingStyle, String marker) {
+        return NumberingStyleNames.UNORDERED.equals(numberingStyle)
+            || !marker.startsWith(MarkdownSyntax.LIST_ITEM);
+    }
+
+    /**
+     * The item's numbering label, or null when it is absent or is not a plain number
+     * followed by at most one delimiter - anything else would not survive being reused
+     * as a Markdown marker.
+     */
+    private static String readLabel(String itemText, int labelLength) {
+        if (labelLength <= 0 || labelLength > itemText.length()) {
+            return null;
+        }
+        String label = itemText.substring(0, labelLength).trim();
+        if (label.isEmpty()) {
+            return null;
+        }
+        int digits = 0;
+        while (digits < label.length() && Character.isDigit(label.charAt(digits))) {
+            digits++;
+        }
+        if (digits == 0 || digits > MAX_LIST_NUMBER_DIGITS || label.length() > digits + 1) {
+            return null;
+        }
+        if (label.length() == digits + 1) {
+            char delimiter = label.charAt(digits);
+            if (delimiter != '.' && delimiter != ')') {
+                return null;
+            }
+        }
+        return label;
+    }
+
+    /**
+     * Drops the item's numbering label from its text.
+     *
+     * <p>Called only when the marker already stands in for the label: a bullet, which
+     * replaces it, or a reused decimal label, which would otherwise be written twice.
+     * A roman or lettered label is left in the text, because nothing in the marker
+     * carries it.
+     */
+    static String stripListLabel(String itemText, int labelLength) {
+        if (labelLength <= 0 || labelLength > itemText.length()) {
+            return itemText;
+        }
+        int start = labelLength;
+        while (start < itemText.length() && itemText.charAt(start) == ' ') {
+            start++;
+        }
+        return itemText.substring(start);
+    }
+
+    private static String repeatSpace(int length) {
+        StringBuilder spaces = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            spaces.append(' ');
+        }
+        return spaces.toString();
     }
 
     protected void writeTOC(SemanticTOC toc) throws IOException {
