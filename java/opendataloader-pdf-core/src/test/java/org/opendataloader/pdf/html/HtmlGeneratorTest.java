@@ -148,4 +148,41 @@ class HtmlGeneratorTest {
         assertEquals("quote&quot; and null byte",
             HtmlGenerator.escapeHtmlAttribute("quote\" and\u0000\nnull byte"));
     }
+
+    // ----- getTextFromLineForHTML: space between chunks on the same line -----
+
+    /**
+     * A line split into two chunks - e.g. by a font or color change mid-line - used to
+     * be glued together with no separator. The semantic layer's own text join
+     * (SemanticTextNode.getValue(), what JSON's "content" field carries) inserts a space
+     * between every chunk on a line; HTML now matches it.
+     */
+    @Test
+    void testGetTextFromLineForHTML_insertsSpaceBetweenChunks() {
+        TextLine line = new TextLine();
+        line.add(createChunk("Hello", false, false));
+        line.add(createChunk("world", false, false));
+        StringBuilder sb = new StringBuilder();
+
+        HtmlGenerator.getTextFromLineForHTML(line, sb);
+
+        assertEquals("Hello world", sb.toString());
+    }
+
+    /**
+     * The inserted space sits outside the styled chunk's "<span>", so a styled chunk
+     * following a plain one reads "Hello <span ...>world</span>", not
+     * "Hello<span ...> world</span>".
+     */
+    @Test
+    void testGetTextFromLineForHTML_spaceSitsOutsideStyledSpan() {
+        TextLine line = new TextLine();
+        line.add(createChunk("Hello", false, false));
+        line.add(createChunk("world", false, true));
+        StringBuilder sb = new StringBuilder();
+
+        HtmlGenerator.getTextFromLineForHTML(line, sb);
+
+        assertEquals("Hello <span style=\"text-decoration: underline;\">world</span>", sb.toString());
+    }
 }

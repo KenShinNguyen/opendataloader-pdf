@@ -516,7 +516,14 @@ public class HtmlGenerator implements Closeable {
     }
 
     public static void getTextFromLineForHTML(TextLine line, StringBuilder stringBuilder) {
+        boolean first = true;
         for (TextChunk chunk : line.getTextChunks()) {
+            // Matches the space the semantic layer inserts between every chunk on a line
+            // (SemanticTextNode.getValue()'s own join) - without it, a line split into more
+            // than one chunk, e.g. by a font or color change, glued the two spans together.
+            if (!first) {
+                stringBuilder.append(' ');
+            }
             String style = getTextStyle(chunk);
             if (!style.isEmpty()) {
                 String styleAttribute = String.format(HtmlSyntax.HTML_STYLE_ATTRIBUTE, style.trim());
@@ -526,6 +533,7 @@ public class HtmlGenerator implements Closeable {
             } else {
                 stringBuilder.append(escapeHtmlText(chunk.getValue()));
             }
+            first = false;
         }
     }
 

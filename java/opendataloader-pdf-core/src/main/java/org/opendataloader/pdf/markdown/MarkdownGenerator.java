@@ -600,7 +600,14 @@ public class MarkdownGenerator implements Closeable {
     }
 
     public static void getTextFromLineForMarkdown(TextLine line, StringBuilder stringBuilder) {
+        boolean first = true;
         for (TextChunk chunk : line.getTextChunks()) {
+            // Matches the space the semantic layer inserts between every chunk on a line
+            // (SemanticTextNode.getValue()'s own join) - without it, a line split into more
+            // than one chunk, e.g. by a font or color change, glued the two spans together.
+            if (!first) {
+                stringBuilder.append(' ');
+            }
             if (chunk.getIsStrikethroughText()) {
                 stringBuilder.append(strikethroughTextMD);
             }
@@ -608,6 +615,7 @@ public class MarkdownGenerator implements Closeable {
             if (chunk.getIsStrikethroughText()) {
                 stringBuilder.append(strikethroughTextMD);
             }
+            first = false;
         }
     }
 
