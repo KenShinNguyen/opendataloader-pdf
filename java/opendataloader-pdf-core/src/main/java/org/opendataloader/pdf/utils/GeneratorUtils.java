@@ -23,7 +23,7 @@ public class GeneratorUtils {
             }
             stringBuilder.append(getTextFromLines(blocks.get(blocks.size() - 1).getLines(), outputType));
         }
-        return stringBuilder.toString();
+        return LineJoinRepair.repairSplitUrls(stringBuilder.toString());
     }
 
     public static String getTextFromLines(List<TextLine> textLines, OutputType outputType) {
@@ -48,6 +48,6 @@ public class GeneratorUtils {
                 HtmlGenerator.getTextFromLineForHTML(textLines.get(textLines.size() - 1), stringBuilder);
                 break;
         }
-        return stringBuilder.toString();
+        return LineJoinRepair.repairSplitUrls(stringBuilder.toString());
     }
 }

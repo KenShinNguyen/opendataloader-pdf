@@ -16,6 +16,7 @@
 package org.opendataloader.pdf.text;
 
 import org.opendataloader.pdf.api.Config;
+import org.opendataloader.pdf.utils.LineJoinRepair;
 import org.verapdf.wcag.algorithms.entities.*;
 import org.verapdf.wcag.algorithms.entities.lists.ListItem;
 import org.verapdf.wcag.algorithms.entities.lists.PDFList;
@@ -248,7 +249,7 @@ public class TextGenerator implements Closeable {
     }
 
     private String sanitize(String value) {
-        return value == null ? "" : value.replace("\u0000", " ");
+        return value == null ? "" : LineJoinRepair.repairSplitUrls(value.replace("\u0000", " "));
     }
 
     private String compactWhitespace(String value) {
