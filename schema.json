@@ -235,6 +235,10 @@
               "minimum": 1,
               "description": "Number of columns spanned"
             },
+            "is_header": {
+              "type": "boolean",
+              "description": "Present and true when the cell is a header cell; omitted otherwise"
+            },
             "kids": {
               "type": "array",
               "description": "Nested content elements",
