@@ -17,6 +17,7 @@ package org.opendataloader.pdf.processors;
 
 import org.opendataloader.pdf.containers.StaticLayoutContainers;
 import org.opendataloader.pdf.utils.BulletedParagraphUtils;
+import org.opendataloader.pdf.utils.HeadingHeuristics;
 import org.opendataloader.pdf.utils.TextNodeStatistics;
 import org.opendataloader.pdf.utils.TextNodeUtils;
 import org.verapdf.wcag.algorithms.entities.INode;
@@ -43,6 +44,14 @@ import java.util.*;
 public class HeadingProcessor {
     private static final double HEADING_PROBABILITY = 0.75;
     private static final double BULLETED_HEADING_PROBABILITY = 0.1;
+
+    /**
+     * Font size and weight are floating point, and a heading set one notch larger than
+     * the body is still clearly larger, so the comparison against the dominant style
+     * only needs to absorb rounding noise.
+     */
+    private static final double FONT_SIZE_TOLERANCE = 0.05;
+    private static final double FONT_WEIGHT_TOLERANCE = 1.0;
 
     /**
      * Processes content to identify and mark headings.
@@ -77,7 +86,8 @@ public class HeadingProcessor {
             if (BulletedParagraphUtils.isBulletedParagraph(textNode)) {
                 probability += BULLETED_HEADING_PROBABILITY;
             }
-            if (probability > HEADING_PROBABILITY && textNode.getSemanticType() != SemanticType.LIST) {
+            if (probability > HEADING_PROBABILITY && textNode.getSemanticType() != SemanticType.LIST
+                && !isBodyText(textNode, textNodeStatistics)) {
                 textNode.setSemanticType(SemanticType.HEADING);
             }
             if (textNode.getSemanticType() == SemanticType.HEADING && textNode.getInitialSemanticType() == SemanticType.LIST) {
@@ -91,6 +101,32 @@ public class HeadingProcessor {
             }
         }
         setHeadings(contents);
+    }
+
+    /**
+     * Whether a node scored as a heading is really a paragraph.
+     *
+     * <p>The veto needs both halves to agree. Text styled no larger and no bolder than
+     * the body is not visually set apart on the page, and text shaped like a sentence is
+     * not a label; either on its own is common in a real heading - a run-in heading is
+     * body sized, and a heading can end in a full stop - but together they describe body
+     * text that the score happened to like. A heading that is genuinely larger or bolder
+     * than the body is never touched, whatever its wording.
+     */
+    private static boolean isBodyText(SemanticTextNode textNode, TextNodeStatistics statistics) {
+        double dominantFontSize = statistics.getDominantFontSize();
+        if (dominantFontSize <= 0.0) {
+            // Nothing to compare against: leave the score alone.
+            return false;
+        }
+        if (textNode.getFontSize() > dominantFontSize + FONT_SIZE_TOLERANCE) {
+            return false;
+        }
+        double dominantFontWeight = statistics.getDominantFontWeight();
+        if (dominantFontWeight > 0.0 && textNode.getFontWeight() > dominantFontWeight + FONT_WEIGHT_TOLERANCE) {
+            return false;
+        }
+        return HeadingHeuristics.looksLikeSentence(textNode.getValue());
     }
 
     private static List<IObject> disassemblePDFList(PDFList list) {
