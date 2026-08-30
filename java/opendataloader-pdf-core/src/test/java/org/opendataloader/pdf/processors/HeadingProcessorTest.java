@@ -16,11 +16,13 @@
 package org.opendataloader.pdf.processors;
 
 import org.opendataloader.pdf.containers.StaticLayoutContainers;
+import org.opendataloader.pdf.utils.TextNodeStatistics;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.verapdf.wcag.algorithms.entities.IObject;
 import org.verapdf.wcag.algorithms.entities.SemanticHeading;
 import org.verapdf.wcag.algorithms.entities.SemanticParagraph;
+import org.verapdf.wcag.algorithms.entities.SemanticTextNode;
 import org.verapdf.wcag.algorithms.entities.content.TextChunk;
 import org.verapdf.wcag.algorithms.entities.content.TextLine;
 import org.verapdf.wcag.algorithms.entities.geometry.BoundingBox;
@@ -28,6 +30,8 @@ import org.verapdf.wcag.algorithms.semanticalgorithms.containers.StaticContainer
 
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class HeadingProcessorTest {
 
@@ -70,5 +74,47 @@ public class HeadingProcessorTest {
         Assertions.assertEquals(2, headings.size());
         Assertions.assertEquals(1, headings.get(0).getHeadingLevel());
         Assertions.assertEquals(2, headings.get(1).getHeadingLevel());
+    }
+
+    private static SemanticParagraph textNodeOfSize(String text, double fontSize) {
+        SemanticParagraph node = new SemanticParagraph();
+        node.add(new TextLine(new TextChunk(new BoundingBox(0, 10.0, 30.0, 20.0, 40.0),
+            text, "Font1", fontSize, 400, 0, fontSize, new double[]{0.0}, null, 0)));
+        return node;
+    }
+
+    /**
+     * Reproduces a page whose only text nodes are the tail of a paragraph broken across
+     * a page boundary ("personally could be.") and three footnotes: too few samples for
+     * the page's own font-size statistics to mean anything, and the footnotes happen to
+     * be smaller, which used to make the candidate look "larger than body" and skip the
+     * sentence-shape veto entirely.
+     */
+    @Test
+    public void isBodyTextFallsBackToSentenceShapeWhenThePageHasTooFewSamples() {
+        TextNodeStatistics statistics = new TextNodeStatistics();
+        statistics.addTextNode(textNodeOfSize("personally could be.", 15.007));
+        statistics.addTextNode(textNodeOfSize("footnote one", 11.255));
+        statistics.addTextNode(textNodeOfSize("footnote two", 11.255));
+        statistics.addTextNode(textNodeOfSize("footnote three", 11.255));
+
+        SemanticTextNode candidate = textNodeOfSize("personally could be.", 15.007);
+
+        assertThat(HeadingProcessor.isBodyText(candidate, statistics)).isTrue();
+    }
+
+    /**
+     * The same fallback must not fire for a genuine heading just because its page happens
+     * to carry few samples - it only ever demotes a candidate the sentence-shape check
+     * already flags as prose.
+     */
+    @Test
+    public void isBodyTextStillKeepsARealHeadingOnASparsePage() {
+        TextNodeStatistics statistics = new TextNodeStatistics();
+        statistics.addTextNode(textNodeOfSize("footnote one", 11.255));
+
+        SemanticTextNode candidate = textNodeOfSize("CONCLUSION", 25.009);
+
+        assertThat(HeadingProcessor.isBodyText(candidate, statistics)).isFalse();
     }
 }

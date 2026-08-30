@@ -375,9 +375,20 @@ public class MarkdownGenerator implements Closeable {
     }
 
     /**
-     * The item's numbering label, or null when it is absent or is not a plain number
-     * followed by at most one delimiter - anything else would not survive being reused
-     * as a Markdown marker.
+     * The item's numbering label, or null when it is absent, is not a plain number
+     * followed by at most one delimiter, or is really the front of a longer numeral.
+     *
+     * <p>List detection runs on geometry, not meaning, and a paragraph that happens to
+     * open with a decimal number reads the same way a genuine one-item list does: text
+     * starting with digits, optionally a delimiter. "0.24% of all crypto transactions..."
+     * was detected this way with a reported label of "0." - correct as a text span, but
+     * the "0." is the start of "0.24", not a list marker. Reusing it verbatim split the
+     * number itself: "0." became the marker and ".24%" was left as the item's text.
+     *
+     * <p>A genuine list label is never immediately followed by another digit - "1. Desire
+     * to belong" is followed by a space, and no real numbering scheme continues straight
+     * into more digits the way a decimal fraction does. That single check is enough to
+     * tell the two apart without needing to know anything about the document.
      */
     private static String readLabel(String itemText, int labelLength) {
         if (labelLength <= 0 || labelLength > itemText.length()) {
@@ -399,6 +410,9 @@ public class MarkdownGenerator implements Closeable {
             if (delimiter != '.' && delimiter != ')') {
                 return null;
             }
+        }
+        if (labelLength < itemText.length() && Character.isDigit(itemText.charAt(labelLength))) {
+            return null;
         }
         return label;
     }

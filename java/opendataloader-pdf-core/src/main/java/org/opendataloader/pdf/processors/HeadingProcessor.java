@@ -54,6 +54,14 @@ public class HeadingProcessor {
     private static final double FONT_WEIGHT_TOLERANCE = 1.0;
 
     /**
+     * Fewest font-size samples a page needs before its dominant size is trusted for the
+     * "styled like body text" comparison. Below this, the page's own statistics are as
+     * likely to be a handful of footnotes as they are the body, so the comparison is
+     * skipped and the sentence-shape check alone decides.
+     */
+    private static final long MIN_RELIABLE_FONT_SIZE_SAMPLES = 5;
+
+    /**
      * Processes content to identify and mark headings.
      *
      * @param contents the list of content objects to process
@@ -113,7 +121,13 @@ public class HeadingProcessor {
      * text that the score happened to like. A heading that is genuinely larger or bolder
      * than the body is never touched, whatever its wording.
      */
-    private static boolean isBodyText(SemanticTextNode textNode, TextNodeStatistics statistics) {
+    static boolean isBodyText(SemanticTextNode textNode, TextNodeStatistics statistics) {
+        if (statistics.getFontSizeSampleCount() < MIN_RELIABLE_FONT_SIZE_SAMPLES) {
+            // Too few samples on this page to know what "styled like body text" even
+            // means here; let the sentence-shape check decide on its own instead of
+            // comparing against a size that is likely just a few footnotes.
+            return HeadingHeuristics.looksLikeSentence(textNode.getValue());
+        }
         double dominantFontSize = statistics.getDominantFontSize();
         if (dominantFontSize <= 0.0) {
             // Nothing to compare against: leave the score alone.

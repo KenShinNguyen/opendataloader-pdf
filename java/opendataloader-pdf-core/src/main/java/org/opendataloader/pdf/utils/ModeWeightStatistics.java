@@ -27,6 +27,17 @@ public class ModeWeightStatistics {
         countMap.merge(score, 1L, Long::sum);
     }
 
+    /**
+     * @return the number of scores recorded, counting repeats
+     */
+    public long getSampleCount() {
+        long total = 0;
+        for (long count : countMap.values()) {
+            total += count;
+        }
+        return total;
+    }
+
     public double getBoost(double score) {
         initHigherScores();
         int n = higherScores.size();
