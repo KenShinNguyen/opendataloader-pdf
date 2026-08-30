@@ -115,6 +115,23 @@ class ModeWeightStatisticsTest {
     }
 
     @Test
+    void getSampleCountCountsRepeats() {
+        ModeWeightStatistics statistics = new ModeWeightStatistics(10.0, 32.0, 10.0, 13.0);
+        statistics.addScore(15.007);
+        statistics.addScore(11.255);
+        statistics.addScore(11.255);
+
+        assertThat(statistics.getSampleCount()).isEqualTo(3);
+    }
+
+    @Test
+    void getSampleCountIsZeroWithoutScores() {
+        ModeWeightStatistics statistics = new ModeWeightStatistics(10.0, 32.0, 10.0, 13.0);
+
+        assertThat(statistics.getSampleCount()).isEqualTo(0);
+    }
+
+    @Test
     void getDominantScorePrefersTheWindowedScoreOnATie() {
         ModeWeightStatistics statistics = new ModeWeightStatistics(10.0, 32.0, 10.0, 13.0);
         for (int i = 0; i < 10; i++) {

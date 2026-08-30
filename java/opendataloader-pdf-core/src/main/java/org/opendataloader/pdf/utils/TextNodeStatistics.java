@@ -53,6 +53,21 @@ public class TextNodeStatistics {
     }
 
     /**
+     * How many font-size samples the dominant size above was computed from.
+     *
+     * <p>A page carrying only a handful of text nodes - a page that is mostly a
+     * full-bleed image, or the tail of a chapter followed by footnotes - can have a
+     * "dominant" size that is really just whichever few nodes happened to be there,
+     * which makes a size comparison against it unreliable. Callers can use this to
+     * decide when to trust that comparison and when to fall back to another signal.
+     *
+     * @return the number of font-size samples recorded
+     */
+    public long getFontSizeSampleCount() {
+        return fontSizeStatistics.getSampleCount();
+    }
+
+    /**
      * @return the font weight of ordinary body text, or 0.0 when no text node was added
      */
     public double getDominantFontWeight() {
