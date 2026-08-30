@@ -268,6 +268,25 @@ public class MarkdownGeneratorTest {
         assertEquals("0.24% of all crypto transactions", sb.toString());
     }
 
+    /**
+     * A chunk boundary that already carries its own space - a numbering prefix split from
+     * its body text, "2) " + "Variazione..." - must not get a second one inserted next to
+     * it ("2)  Variazione..."). Regression test for Issue #336's financial-statement row,
+     * which this doubling broke in the plain Markdown table's exact-text match while
+     * staying invisible everywhere whitespace gets collapsed before comparing.
+     */
+    @Test
+    void testGetTextFromLineForMarkdown_doesNotDoubleASpaceAlreadyAtTheBoundary() {
+        TextLine line = new TextLine();
+        line.add(new TextChunk("2) "));
+        line.add(new TextChunk("Variazione rimanenze"));
+        StringBuilder sb = new StringBuilder();
+
+        MarkdownGenerator.getTextFromLineForMarkdown(line, sb);
+
+        assertEquals("2) Variazione rimanenze", sb.toString());
+    }
+
     @Test
     void testGetTextFromLineForMarkdown_singleChunkUnchanged() {
         TextLine line = new TextLine(new TextChunk("Plain text"));

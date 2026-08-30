@@ -15,9 +15,11 @@
  */
 package org.opendataloader.pdf.utils;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.verapdf.wcag.algorithms.entities.content.TextChunk;
 import org.verapdf.wcag.algorithms.entities.content.TextLine;
+import org.verapdf.wcag.algorithms.semanticalgorithms.containers.StaticContainers;
 
 import java.util.List;
 
@@ -31,6 +33,21 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * wrapped around it, so it doubles as a check of the underlying join rules themselves.
  */
 class GeneratorUtilsTest {
+
+    /**
+     * appendLineJoin reads StaticContainers.isKeepLineBreaks(), a ThreadLocal that is
+     * null until initialized - other test classes in the suite normally reach it first
+     * via their own setup, but this class should not depend on run order to do that.
+     * updateContainers defaults it to true; production sets it from Config, which
+     * defaults to false (DocumentProcessor.processDocument mirrors that explicitly),
+     * so these tests do the same to exercise the join rules these tests are actually
+     * about rather than the keep-line-breaks branch.
+     */
+    @BeforeAll
+    static void initStaticContainers() {
+        StaticContainers.updateContainers(null);
+        StaticContainers.setKeepLineBreaks(false);
+    }
 
     @Test
     void testGetTextFromLines_ordinaryLineBreakBecomesSpace() {
@@ -109,5 +126,44 @@ class GeneratorUtilsTest {
         String text = GeneratorUtils.getTextFromLines(List.of(line1, line2), OutputType.TXT);
 
         assertEquals("hello world", text);
+    }
+
+    /**
+     * A chunk boundary that already carries its own space - here, on the trailing edge of
+     * the first chunk ("2) ") - must not get a second one inserted next to it. A
+     * numbering prefix split from its body text this way ("2) " + "Variazione...") doubled
+     * to "2)  Variazione..." (two spaces): invisible to a whitespace-collapsing comparison,
+     * but not to an exact one, e.g. a Markdown table row matched against literal text.
+     */
+    @Test
+    void testGetTextFromLines_doesNotDoubleASpaceAlreadyTrailingOnAChunk() {
+        TextLine line = new TextLine();
+        line.add(new TextChunk("2) "));
+        line.add(new TextChunk("Variazione rimanenze"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line), OutputType.JSON);
+
+        assertEquals("2) Variazione rimanenze", text);
+    }
+
+    /** Same as above, but the space is baked onto the leading edge of the second chunk instead. */
+    @Test
+    void testGetTextFromLines_doesNotDoubleASpaceAlreadyLeadingOnAChunk() {
+        TextLine line = new TextLine();
+        line.add(new TextChunk("2)"));
+        line.add(new TextChunk(" Variazione rimanenze"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line), OutputType.JSON);
+
+        assertEquals("2) Variazione rimanenze", text);
+    }
+
+    @Test
+    void testNeedsChunkSeparator_trueOnlyWhenNeitherSideHasWhitespace() {
+        assertEquals(true, GeneratorUtils.needsChunkSeparator(new StringBuilder("0.24%"), "of all"));
+        assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("2) "), "Variazione"));
+        assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("2)"), " Variazione"));
+        assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder(), "Variazione"));
+        assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("2)"), ""));
     }
 }

@@ -81,19 +81,40 @@ public class GeneratorUtils {
 
     /**
      * The markup-free join every {@link OutputType} shares: chunk values in order,
-     * separated by a single space - the same rule the semantic layer's own
-     * {@code TextLine.toString()} uses to build {@code SemanticTextNode.getValue()},
-     * which is what {@link OutputType#JSON} and {@link OutputType#TXT} render here.
+     * separated by a single space where one is missing - the same rule the semantic
+     * layer's own {@code TextLine.toString()} uses to build
+     * {@code SemanticTextNode.getValue()}, which is what {@link OutputType#JSON} and
+     * {@link OutputType#TXT} render here.
      */
     private static void getTextFromLineForPlainText(TextLine line, StringBuilder stringBuilder) {
         boolean first = true;
         for (TextChunk chunk : line.getTextChunks()) {
-            if (!first) {
+            String value = chunk.getValue();
+            if (!first && needsChunkSeparator(stringBuilder, value)) {
                 stringBuilder.append(' ');
             }
-            stringBuilder.append(chunk.getValue());
+            stringBuilder.append(value);
             first = false;
         }
+    }
+
+    /**
+     * Whether a space belongs between what has been written for this line so far and the
+     * next chunk's value.
+     *
+     * <p>A run split across two chunks on the same line - by a font or color change, most
+     * often - can carry its own natural inter-word space already: a chunk's trailing
+     * character, or the next chunk's leading one. Inserting another there doubled it
+     * ("2)  Variazione..." for a chunk boundary that already fell right after "2) "),
+     * invisible to a whitespace-collapsing comparison but not to an exact one. A space is
+     * only missing, and only then added, when neither side already has one.
+     */
+    public static boolean needsChunkSeparator(StringBuilder stringBuilder, String nextValue) {
+        if (stringBuilder.length() == 0 || nextValue.isEmpty()) {
+            return false;
+        }
+        return !Character.isWhitespace(stringBuilder.charAt(stringBuilder.length() - 1))
+            && !Character.isWhitespace(nextValue.charAt(0));
     }
 
     /**

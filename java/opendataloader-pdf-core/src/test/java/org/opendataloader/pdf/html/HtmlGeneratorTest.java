@@ -170,6 +170,24 @@ class HtmlGeneratorTest {
     }
 
     /**
+     * A chunk boundary that already carries its own space must not get a second one
+     * inserted next to it. Regression test for Issue #336's financial-statement row,
+     * where this doubling stayed invisible under HTML's whitespace-collapsing test but
+     * broke the exact-text Markdown table check that shares this same join logic.
+     */
+    @Test
+    void testGetTextFromLineForHTML_doesNotDoubleASpaceAlreadyAtTheBoundary() {
+        TextLine line = new TextLine();
+        line.add(createChunk("Hello ", false, false));
+        line.add(createChunk("world", false, false));
+        StringBuilder sb = new StringBuilder();
+
+        HtmlGenerator.getTextFromLineForHTML(line, sb);
+
+        assertEquals("Hello world", sb.toString());
+    }
+
+    /**
      * The inserted space sits outside the styled chunk's "<span>", so a styled chunk
      * following a plain one reads "Hello <span ...>world</span>", not
      * "Hello<span ...> world</span>".
