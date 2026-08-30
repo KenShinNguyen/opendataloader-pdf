@@ -69,6 +69,10 @@
         },
         "bounding box": {
           "$ref": "#/$defs/boundingBox"
+        },
+        "pdfua_tag": {
+          "type": "string",
+          "description": "PDF/UA structure tag the element maps to (P, H1, L, LI, Figure, Table, ...)"
         }
       },
       "required": ["type", "page number", "bounding box"]
@@ -77,8 +81,8 @@
       "type": "object",
       "properties": {
         "font": {
-          "type": "string",
-          "description": "Font name"
+          "type": ["string", "null"],
+          "description": "Font name, or null when the font carries no name (a Type3 font, for one)"
         },
         "font size": {
           "type": "number",
@@ -97,7 +101,7 @@
           "description": "Whether this is hidden text (e.g., OCR layer)"
         }
       },
-      "required": ["font", "font size", "text color", "content"]
+      "required": ["font", "font size", "content"]
     },
     "contentElement": {
       "oneOf": [
@@ -328,6 +332,15 @@
               "type": "string",
               "description": "Image format (png, jpeg)",
               "enum": ["png", "jpeg"]
+            },
+            "alt": {
+              "type": "string",
+              "description": "Alternative text for the image"
+            },
+            "alt_source": {
+              "type": "string",
+              "description": "Where the alternative text came from: the PDF's own /Alt, an AI caption, or absent",
+              "enum": ["original", "ai-generated", "missing"]
             }
           }
         }

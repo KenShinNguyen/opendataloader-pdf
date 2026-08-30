@@ -10,6 +10,7 @@ on:
       - 'scripts/**'
       - 'verification/**'
       - 'samples/**'
+      - 'schema.json'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -103,6 +104,23 @@ jobs:
         # ci-verify.py writes its own markdown table to $GITHUB_STEP_SUMMARY,
         # so no separate summary step is needed here.
         run: python verification/ci-verify.py
+
+      # schema.json is hand-maintained and is what the reference docs and every
+      # consumer are written against, so it drifts silently: alt_source and
+      # pdfua_tag shipped in every output for releases without ever appearing in
+      # it. Producing real output and checking it back against the schema is the
+      # only thing that notices.
+      - name: Check JSON output against schema.json
+        run: |
+          uv pip install --system jsonschema
+          rm -rf samples/temp
+          # samples/pdf holds deliberately broken files (empty, password
+          # protected, a JPEG renamed .pdf), so the CLI is expected to report
+          # failures here; ci-verify.py above is what judges its exit code. This
+          # step only needs the JSON it did produce, and the validator fails if
+          # that turns out to be nothing.
+          ./scripts/run-cli.sh -f json -o samples/temp samples/pdf || true
+          python scripts/validate-json-schema.py samples/temp samples/json
 
       - name: Upload verification report
         if: always()

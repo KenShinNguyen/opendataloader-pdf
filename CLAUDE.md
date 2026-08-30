@@ -4,6 +4,8 @@
 
 After changing CLI options in Java, **must** run `npm run sync` — this regenerates `options.json` and all Python/Node.js bindings. Forgetting this silently breaks the wrappers.
 
+After changing what a JSON serializer writes, **must** update `schema.json` in the same change — it is hand-maintained, and the reference docs and every consumer are written against it. CI produces real output and checks it back (`scripts/validate-json-schema.py`), which catches both a new field the schema never declares and a declared field whose type no longer matches.
+
 When using `--enrich-formula` or `--enrich-picture-description` on the hybrid server, the client **must** use `--hybrid-mode full`. Otherwise enrichments are silently skipped (they only run on the backend, not in Java).
 
 Processing uses `ForkJoinPool(availableProcessors)` for per-page parallelism. All `StaticContainers` and `StaticLayoutContainers` ThreadLocal state must be propagated to worker threads via `propagateState.run()` — missing a ThreadLocal causes silent data loss or NPE in parallel mode.
