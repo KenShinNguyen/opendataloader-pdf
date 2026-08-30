@@ -16,6 +16,8 @@
 package org.opendataloader.pdf.markdown;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.verapdf.wcag.algorithms.semanticalgorithms.utils.listLabelsDetection.NumberingStyleNames;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -92,6 +94,32 @@ class MarkdownListTest {
      * A nested list has to start at or past the column where its parent item's text
      * starts, or Markdown reads it as a sibling instead of a child.
      */
+    /**
+     * ListProcessor detects a list by geometry, and a paragraph that opens with a
+     * decimal number reads the same way a one-item list does: digits, then a delimiter.
+     * "0.24% of all crypto transactions..." was detected this way with a reported label
+     * of "0." - a real span of the text, but the start of "0.24", not a list marker.
+     * Reusing it split the number itself: "0." became the marker, ".24%" was left as the
+     * item's text. A genuine label is never immediately followed by another digit, so
+     * that alone tells a real marker from the front of a longer numeral.
+     */
+    @Test
+    void aDecimalNumberOpeningAParagraphIsNotMistakenForALabel() {
+        assertThat(renderItem(NumberingStyleNames.ARABIC_NUMBERS,
+            "0.24% of all crypto transactions were linked to illicit activities.", 2))
+            .isEqualTo("- 0.24% of all crypto transactions were linked to illicit activities.");
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "3.14 is pi|- 3.14 is pi",
+        "1.5 million people|- 1.5 million people",
+        "2.0 out of 5 stars|- 2.0 out of 5 stars"
+    })
+    void otherDecimalNumbersAreNotMistakenForALabelEither(String itemText, String expected) {
+        assertThat(renderItem(NumberingStyleNames.ARABIC_NUMBERS, itemText, 2)).isEqualTo(expected);
+    }
+
     @Test
     void aNestedListIsIndentedUnderItsParentItem() {
         String parent = "I. Understanding our inner psychology";
