@@ -79,6 +79,22 @@ class LineJoinRepairTest {
         assertThat(LineJoinRepair.repairSplitUrls(text)).isEqualTo(text);
     }
 
+    /**
+     * '.' and '?' end sentences as well as breaking URLs, so for those the word after
+     * the break has to look like part of a URL too. A sentence resuming in lower case
+     * used to be glued onto the URL in front of it.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "Read https://example.com. see the appendix",
+        "Read https://example.com. the appendix follows",
+        "Try https://example.com/a? or maybe not",
+        "Visit www.example.com. more on this later"
+    })
+    void leavesASentenceResumingInLowerCaseAfterAUrl(String text) {
+        assertThat(LineJoinRepair.repairSplitUrls(text)).isEqualTo(text);
+    }
+
     @Test
     void passesNullThrough() {
         assertThat(LineJoinRepair.repairSplitUrls(null)).isNull();
