@@ -18,7 +18,8 @@ package org.opendataloader.pdf.json.serializers;
 import com.fasterxml.jackson.core.JsonGenerator;
 import org.opendataloader.pdf.hybrid.ElementMetadata;
 import org.opendataloader.pdf.json.JsonName;
-import org.opendataloader.pdf.utils.LineJoinRepair;
+import org.opendataloader.pdf.utils.GeneratorUtils;
+import org.opendataloader.pdf.utils.OutputType;
 import org.opendataloader.pdf.utils.TextNodeUtils;
 import org.verapdf.tools.TaggedPDFConstants;
 import org.verapdf.wcag.algorithms.entities.IObject;
@@ -204,7 +205,11 @@ public class SerializerUtil {
         if (textColor != null) {
             jsonGenerator.writeStringField(JsonName.TEXT_COLOR, Arrays.toString(textColor));
         }
-        jsonGenerator.writeStringField(JsonName.CONTENT, LineJoinRepair.repairSplitUrls(textNode.getValue()));
+        // Same canonical join Markdown and HTML use (GeneratorUtils), not the semantic
+        // layer's own SemanticTextNode.getValue() - the two used to disagree on the space
+        // between text spans and on hyphen/em-dash handling at a line break; building JSON's
+        // content through the same path as the other formats keeps all three in lockstep.
+        jsonGenerator.writeStringField(JsonName.CONTENT, GeneratorUtils.getTextFromTextNode(textNode, OutputType.JSON));
         if (textNode.isHiddenText()) {
             jsonGenerator.writeBooleanField(JsonName.HIDDEN_TEXT, true);
         }

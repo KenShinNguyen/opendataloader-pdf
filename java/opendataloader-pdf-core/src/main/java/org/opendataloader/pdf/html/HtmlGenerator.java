@@ -516,16 +516,26 @@ public class HtmlGenerator implements Closeable {
     }
 
     public static void getTextFromLineForHTML(TextLine line, StringBuilder stringBuilder) {
+        boolean first = true;
         for (TextChunk chunk : line.getTextChunks()) {
+            String value = chunk.getValue();
+            // Matches the space the semantic layer inserts between chunks on a line that
+            // don't already carry one at the boundary (SemanticTextNode.getValue()'s own
+            // join) - without it, a line split into more than one chunk, e.g. by a font or
+            // color change, glued the two spans together.
+            if (!first && GeneratorUtils.needsChunkSeparator(stringBuilder, value)) {
+                stringBuilder.append(' ');
+            }
             String style = getTextStyle(chunk);
             if (!style.isEmpty()) {
                 String styleAttribute = String.format(HtmlSyntax.HTML_STYLE_ATTRIBUTE, style.trim());
                 stringBuilder.append(String.format(HtmlSyntax.HTML_SPAN_START_TAG, styleAttribute));
-                stringBuilder.append(escapeHtmlText(chunk.getValue()));
+                stringBuilder.append(escapeHtmlText(value));
                 stringBuilder.append(HtmlSyntax.HTML_SPAN_CLOSE_TAG);
             } else {
-                stringBuilder.append(escapeHtmlText(chunk.getValue()));
+                stringBuilder.append(escapeHtmlText(value));
             }
+            first = false;
         }
     }
 

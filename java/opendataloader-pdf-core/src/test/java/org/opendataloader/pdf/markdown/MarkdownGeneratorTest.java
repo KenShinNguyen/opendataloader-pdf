@@ -19,6 +19,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.opendataloader.pdf.api.Config;
+import org.verapdf.wcag.algorithms.entities.content.TextChunk;
+import org.verapdf.wcag.algorithms.entities.content.TextLine;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -243,5 +245,73 @@ public class MarkdownGeneratorTest {
         // PDF came out doubled: "&amp;" became "&amp;amp;".
         MarkdownGenerator generator = newGeneratorForEscaping();
         assertEquals("&amp;", generator.getCorrectMarkdownString("&amp;"));
+    }
+
+    // ----- getTextFromLineForMarkdown: space between chunks on the same line -----
+
+    /**
+     * A line split into two chunks - e.g. by a font or color change mid-line - used to
+     * be glued together with no separator: "0.24%" and "of all crypto transactions"
+     * became "0.24%of all crypto transactions". The semantic layer's own text join
+     * (SemanticTextNode.getValue(), what JSON's "content" field carries) inserts a space
+     * between every chunk on a line; Markdown now matches it.
+     */
+    @Test
+    void testGetTextFromLineForMarkdown_insertsSpaceBetweenChunks() {
+        TextLine line = new TextLine();
+        line.add(new TextChunk("0.24%"));
+        line.add(new TextChunk("of all crypto transactions"));
+        StringBuilder sb = new StringBuilder();
+
+        MarkdownGenerator.getTextFromLineForMarkdown(line, sb);
+
+        assertEquals("0.24% of all crypto transactions", sb.toString());
+    }
+
+    /**
+     * A chunk boundary that already carries its own space - a numbering prefix split from
+     * its body text, "2) " + "Variazione..." - must not get a second one inserted next to
+     * it ("2)  Variazione..."). Regression test for Issue #336's financial-statement row,
+     * which this doubling broke in the plain Markdown table's exact-text match while
+     * staying invisible everywhere whitespace gets collapsed before comparing.
+     */
+    @Test
+    void testGetTextFromLineForMarkdown_doesNotDoubleASpaceAlreadyAtTheBoundary() {
+        TextLine line = new TextLine();
+        line.add(new TextChunk("2) "));
+        line.add(new TextChunk("Variazione rimanenze"));
+        StringBuilder sb = new StringBuilder();
+
+        MarkdownGenerator.getTextFromLineForMarkdown(line, sb);
+
+        assertEquals("2) Variazione rimanenze", sb.toString());
+    }
+
+    @Test
+    void testGetTextFromLineForMarkdown_singleChunkUnchanged() {
+        TextLine line = new TextLine(new TextChunk("Plain text"));
+        StringBuilder sb = new StringBuilder();
+
+        MarkdownGenerator.getTextFromLineForMarkdown(line, sb);
+
+        assertEquals("Plain text", sb.toString());
+    }
+
+    /**
+     * The inserted space sits outside the "~~" strikethrough markers, so a strikethrough
+     * chunk following a plain one reads "plain ~~struck~~", not "plain~~ struck~~".
+     */
+    @Test
+    void testGetTextFromLineForMarkdown_spaceSitsOutsideStrikethroughMarkers() {
+        TextChunk struck = new TextChunk("world");
+        struck.setIsStrikethroughText();
+        TextLine line = new TextLine();
+        line.add(new TextChunk("Hello"));
+        line.add(struck);
+        StringBuilder sb = new StringBuilder();
+
+        MarkdownGenerator.getTextFromLineForMarkdown(line, sb);
+
+        assertEquals("Hello ~~world~~", sb.toString());
     }
 }
