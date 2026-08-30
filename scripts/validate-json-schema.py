@@ -30,6 +30,11 @@ SCHEMA_PATH = ROOT / "schema.json"
 # every definition.
 UNIVERSAL_FIELDS = {"type", "id", "page number", "bounding box"}
 
+# The document object carries no "type" of its own, so the sweep below cannot
+# find its definition the way it finds an element's. It is checked separately
+# against the schema's top-level properties, under this name.
+ROOT_LABEL = "document"
+
 
 def resolve(node, defs, depth=0):
     """Every property name a schema node allows, following $ref and allOf."""
@@ -58,6 +63,15 @@ def build_type_map(schema):
         for value in const if isinstance(const, list) else [const]:
             by_type[value] = set(props) | UNIVERSAL_FIELDS
     return by_type
+
+
+def check_root(document, schema, undeclared):
+    """Sweep the document object itself, which has no "type" to look up."""
+    if not isinstance(document, dict):
+        return
+    allowed = set(resolve(schema, schema.get("$defs", {})))
+    for field in sorted(set(document) - allowed):
+        undeclared.setdefault((ROOT_LABEL, field), "$")
 
 
 def walk(node, by_type, path, undeclared, unknown_types):
@@ -133,6 +147,7 @@ def main(argv):
         print(f"checking {path}")
         undeclared = {}
         unknown_types = set()
+        check_root(document, schema, undeclared)
         walk(document, by_type, "$", undeclared, unknown_types)
 
         for (element_type, field), where in sorted(undeclared.items()):
