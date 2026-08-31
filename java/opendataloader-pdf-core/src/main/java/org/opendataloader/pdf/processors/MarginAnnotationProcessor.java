@@ -23,7 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Pulls short, narrow paragraphs whose bounding box sits entirely outside a
+ * Pulls short, narrow paragraphs positioned at or past the outer edge of a
  * page's dominant body-text column - a margin callout ("1st point of
  * refutation..."), or the tiny leader-line digit that connects one to its
  * highlighted body passage - out of the normal reading flow, before
@@ -35,11 +35,23 @@ import java.util.List;
  * sentence, in the worst case), and a lone connector digit surfaces as an
  * orphan single-character list item ("1", "2.") with no content of its own.
  *
- * <p>Detection is geometric only: a candidate must be narrower than a real
- * second body column could plausibly be ({@link #MAX_ANNOTATION_WIDTH}), so a
- * genuine two-column layout is never mistaken for margin content (both of its
- * columns are well over that width). A rotated image credit printed sideways
- * along an image edge is excluded separately by its tall/narrow aspect ratio.
+ * <p>Detection is geometric only, which is a deliberate, narrow trade-off, not
+ * a proof that a candidate is actually pedagogical marginalia: a candidate's
+ * near edge only has to clear the body column's edge by
+ * {@link #COLUMN_EDGE_TOLERANCE}, not clear it entirely, and nothing here
+ * confirms the candidate is connected to a highlighted body passage the way a
+ * real callout is. Two bounds keep the false-positive surface small: a
+ * candidate must be narrower than a real second body column could plausibly
+ * be ({@link #MAX_ANNOTATION_WIDTH}, so a genuine two-column layout is never
+ * mistaken for margin content - both of its columns are well over that
+ * width), and shorter than a real sidebar or note box full of running prose
+ * would be ({@link #MAX_ANNOTATION_HEIGHT}). A rotated image credit printed
+ * sideways along an image edge is excluded separately by its tall/narrow
+ * aspect ratio. A false positive here is a stray page-edge scrap (a folio
+ * HeaderFooterProcessor's own repeat-detection missed, say) getting labelled
+ * "annotation" instead of "paragraph" - still pulled out of the body flow
+ * either way, and never anything from the body column itself, but the label
+ * itself is not guaranteed accurate.
  */
 public class MarginAnnotationProcessor {
 
@@ -56,6 +68,16 @@ public class MarginAnnotationProcessor {
      * two-column page.
      */
     private static final double MAX_ANNOTATION_WIDTH = 150.0;
+
+    /**
+     * Upper bound (pt) on a margin-annotation candidate's own height. The tallest
+     * real callout found across the corpus this was built from was ~57pt (a
+     * three-line introduction annotation); 100pt leaves headroom for a longer one
+     * while still excluding a genuine sidebar/note/quote box's worth of running
+     * prose, which a reader would expect to stay in the body flow, not be
+     * relabelled a one-line-callout-shaped "annotation".
+     */
+    private static final double MAX_ANNOTATION_HEIGHT = 100.0;
 
     /**
      * A rotated image credit/caption (printed sideways along an image's edge) is
@@ -118,8 +140,11 @@ public class MarginAnnotationProcessor {
         double width = paragraph.getWidth();
         double height = paragraph.getHeight();
 
-        boolean isRightMargin = left > bodyRight - COLUMN_EDGE_TOLERANCE && width < MAX_ANNOTATION_WIDTH;
-        boolean isLeftMargin = !isRightMargin && right < bodyLeft + COLUMN_EDGE_TOLERANCE && width < MAX_ANNOTATION_WIDTH;
+        if (width >= MAX_ANNOTATION_WIDTH || height >= MAX_ANNOTATION_HEIGHT) {
+            return null;
+        }
+        boolean isRightMargin = left > bodyRight - COLUMN_EDGE_TOLERANCE;
+        boolean isLeftMargin = !isRightMargin && right < bodyLeft + COLUMN_EDGE_TOLERANCE;
         if (!isRightMargin && !isLeftMargin) {
             return null;
         }

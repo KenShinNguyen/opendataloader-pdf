@@ -118,6 +118,26 @@ public class MarginAnnotationProcessorTest {
     }
 
     /**
+     * A narrow sidebar or note box full of running prose is a different thing from a
+     * one-to-three-line callout, even though it sits in the exact same margin position
+     * a real callout would. Something 300pt tall - several paragraphs' worth - must be
+     * left as ordinary body content, not relabelled a callout-shaped "annotation".
+     */
+    @Test
+    public void aTallNarrowSidebarIsNotExtracted() {
+        SemanticParagraph body = paragraphAt("Body text continues across the full column width here.",
+            84.003, 72.111, 483.372, 129.497);
+        SemanticParagraph sidebar = paragraphAt("A long sidebar full of running prose spanning many lines of real content.",
+            500.995, 107.27, 554.988, 407.27);
+        List<IObject> contents = new ArrayList<>(List.of(body, sidebar));
+
+        MarginAnnotationProcessor.Extraction extraction = MarginAnnotationProcessor.extractMarginAnnotations(contents);
+
+        assertThat(extraction.remaining).containsExactly(body, sidebar);
+        assertThat(extraction.annotations).isEmpty();
+    }
+
+    /**
      * A genuine two-column academic layout must never be gutted: both columns are far
      * wider than any real margin annotation, so neither qualifies as a narrow-enough
      * candidate even though each sits well outside the other's horizontal extent.
