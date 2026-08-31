@@ -153,6 +153,19 @@ public class GeneratorUtils {
         }
     }
 
+    /**
+     * Whether {@code word} is a real English word, per the same bundled wordlist {@link
+     * #elidesHyphenBecauseItJoinsAWord} uses to resolve a wrap-hyphenated line break.
+     * Exposed for {@code HeadingProcessor}'s drop-cap check, which needs the same "is this
+     * really a word" question this class already answers for a different reason - a drop
+     * cap concatenated with the paragraph's own next few letters spells a real word,
+     * because that is literally what a drop cap is: the paragraph's own first letter,
+     * rendered oversized and split into its own node by the layout, not a heading.
+     */
+    public static boolean isEnglishWord(String word) {
+        return word != null && EnglishWords.WORDS.contains(word.toLowerCase(Locale.ROOT));
+    }
+
     public static String getTextFromTextNode(SemanticTextNode textNode, OutputType outputType) {
         StringBuilder stringBuilder = new StringBuilder();
         for (TextColumn column : textNode.getColumns()) {
