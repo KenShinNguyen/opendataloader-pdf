@@ -21,21 +21,34 @@ import java.util.List;
  * layer inserts between every chunk on a line (gluing adjacent spans together whenever a
  * line held more than one, e.g. a run split by a font or color change), and both
  * assemblies leaned on the semantic layer's {@code TextChunkUtils.formatLineEnd}, which
- * elides a hyphen-minus, a soft hyphen, *and* an em dash alike at a line break - correct
- * for a genuinely hyphenated word ("congru-" + "ence" -> "congruence"), wrong for an em
- * dash, which is punctuation rather than a broken word and so was disappearing along
- * with the space around it. {@link #getTextFromLineForPlainText} and
- * {@link #appendLineJoin} fix both for every {@link OutputType}, JSON's
- * {@link OutputType#JSON} included, which is what makes this the one canonical builder.
+ * elides a hyphen-minus, a soft hyphen, *and* an em dash alike at a line break, on the
+ * assumption that whichever one ends the line is always a word split by the wrap.
+ * Auditing every hyphen-minus ending a line across a real book-length sample ("Think for
+ * Yourself") turned up zero cases of that - "well-intentioned", "so-called",
+ * "fact-checking", "non-smokers", "meta-analysis", "tuk-tuk" and the rest were all a
+ * compound word's own hyphen, coincidentally falling at the wrap point, and eliding it
+ * merged two words into one ("wellintentioned"). A soft hyphen is different: it exists
+ * specifically to mark a discretionary break, so eliding it is still correct. An em dash
+ * is punctuation, not a broken word, so it was never elided correctly to begin with.
+ * {@link #getTextFromLineForPlainText} and {@link #appendLineJoin} fix all of this for
+ * every {@link OutputType}, JSON's {@link OutputType#JSON} included, which is what makes
+ * this the one canonical builder.
  */
 public class GeneratorUtils {
 
-    /** A hyphen genuinely splitting a word across the line break; elided, no space left behind. */
+    /**
+     * A compound word's own hyphen. Never elided - see the class doc for why a hyphen
+     * ending a line is not reliable evidence of a wrap-hyphenated word.
+     */
     private static final char HYPHEN_MINUS = '-';
-    /** Same as {@link #HYPHEN_MINUS} but invisible except at a break; elided the same way. */
+    /** Exists specifically to mark a discretionary break; elided at a line break. */
     private static final char SOFT_HYPHEN = '\u00AD';
     /** Punctuation, not a broken word - kept, and set flush against the text on both sides. */
     private static final char EM_DASH = '\u2014';
+    /** The ASCII apostrophe, as used in a contraction or possessive. */
+    private static final char APOSTROPHE = '\'';
+    /** The typographic apostrophe most PDF text actually uses in place of {@link #APOSTROPHE}. */
+    private static final char RIGHT_SINGLE_QUOTATION_MARK = '\u2019';
 
     public static String getTextFromTextNode(SemanticTextNode textNode, OutputType outputType) {
         StringBuilder stringBuilder = new StringBuilder();
@@ -116,26 +129,49 @@ public class GeneratorUtils {
      * follows - inserting a space there would read "well- intentioned", not
      * "well-intentioned". No word boundary needs a space right after one, the way
      * {@link #appendLineJoin} already treats them at a line break.
+     *
+     * <p>An apostrophe is the same case again, on either side of the boundary instead of
+     * only the trailing one: a contraction or possessive can arrive with its apostrophe as
+     * its own chunk ("I" + "'" + "m", "can" + "'t", "Wright" + "'s"), and both the chunk
+     * before it and the chunk after already read as flush against the apostrophe - the
+     * ordinary rule alone would read either boundary as a missing word gap and produce
+     * "I ' m" or "Wright ' s".
      */
     public static boolean needsChunkSeparator(StringBuilder stringBuilder, String nextValue) {
         if (stringBuilder.length() == 0 || nextValue.isEmpty()) {
             return false;
         }
         char last = stringBuilder.charAt(stringBuilder.length() - 1);
-        if (last == HYPHEN_MINUS || last == SOFT_HYPHEN || last == EM_DASH) {
+        if (last == HYPHEN_MINUS || last == SOFT_HYPHEN || last == EM_DASH
+                || last == APOSTROPHE || last == RIGHT_SINGLE_QUOTATION_MARK) {
             return false;
         }
-        return !Character.isWhitespace(last) && !Character.isWhitespace(nextValue.charAt(0));
+        char next = nextValue.charAt(0);
+        if (next == APOSTROPHE || next == RIGHT_SINGLE_QUOTATION_MARK) {
+            return false;
+        }
+        return !Character.isWhitespace(last) && !Character.isWhitespace(next);
     }
 
     /**
      * Joins a wrapped line onto what comes next, standing in for the semantic layer's
-     * {@code TextChunkUtils.formatLineEnd} to correct its one mistake: that method elides
-     * a hyphen-minus, a soft hyphen, and an em dash alike, on the assumption that
-     * whichever one ends the line is a word split by the wrap. True for the two hyphens;
-     * an em dash is punctuation, not a broken word, so it is kept - flush against the
-     * text on both sides, as em-dash typography sets it, rather than dropped along with
-     * the space a break would otherwise get.
+     * {@code TextChunkUtils.formatLineEnd} to correct its mistakes: that method elides a
+     * hyphen-minus, a soft hyphen, and an em dash alike, on the assumption that whichever
+     * one ends the line is always a word split by the wrap.
+     *
+     * <p>Only a soft hyphen actually says that - it exists specifically to mark a
+     * discretionary break, so eliding it is correct. A hyphen-minus does not say that: a
+     * compound word's own hyphen ("well-intentioned", "so-called", "fact-checking") reads
+     * identically to a wrap-hyphenated one at the character level, and coincidentally
+     * falling at the wrap point - which is exactly when this method runs - is not evidence
+     * either way. Eliding it on that assumption merged real compound words into one
+     * ("wellintentioned"); auditing every hyphen-minus ending a line across a real
+     * book-length sample found this is what a line-ending hyphen-minus actually is, with
+     * no counterexamples. So it is kept, the way an em dash already was: flush against the
+     * text on both sides, nothing added or removed. An apostrophe ending the accumulated
+     * text - a possessive or contraction broken at the apostrophe itself - is kept the
+     * same way, for the same reason {@link #needsChunkSeparator} keeps it flush at a chunk
+     * boundary.
      */
     private static void appendLineJoin(StringBuilder stringBuilder) {
         if (StaticContainers.isKeepLineBreaks()) {
@@ -146,9 +182,10 @@ public class GeneratorUtils {
             return;
         }
         char last = stringBuilder.charAt(stringBuilder.length() - 1);
-        if (last == HYPHEN_MINUS || last == SOFT_HYPHEN) {
+        if (last == SOFT_HYPHEN) {
             stringBuilder.deleteCharAt(stringBuilder.length() - 1);
-        } else if (last != EM_DASH) {
+        } else if (last != EM_DASH && last != HYPHEN_MINUS
+                && last != APOSTROPHE && last != RIGHT_SINGLE_QUOTATION_MARK) {
             stringBuilder.append(' ');
         }
     }
