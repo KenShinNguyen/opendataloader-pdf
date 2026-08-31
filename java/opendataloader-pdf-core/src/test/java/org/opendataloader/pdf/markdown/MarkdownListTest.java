@@ -148,6 +148,48 @@ class MarkdownListTest {
         assertThat(renderItem(NumberingStyleNames.ARABIC_NUMBERS, itemText, 1)).isEqualTo(expected);
     }
 
+    /**
+     * An ordinal number opening a paragraph reads the same way as a decimal one: digits,
+     * then what looks like it could be a delimiter. "1st point of refutation: Globalization
+     * has been mischaracterized." was detected this way with a reported label of "1" - a
+     * real span of the text, but the start of "1st", not a list marker. Reusing it split
+     * the word itself: "1" became the marker and "st point of refutation..." was left as
+     * the item's text - "1. st point of refutation...". Found in real output from "Read,
+     * Reason, Write". A genuine label is never immediately followed by an ordinal suffix
+     * either, so that tells a real marker from the front of an ordinal number too.
+     */
+    @Test
+    void anOrdinalNumberOpeningAParagraphIsNotMistakenForALabel() {
+        assertThat(renderItem(NumberingStyleNames.ARABIC_NUMBERS,
+            "1st point of refutation: Globalization has been mischaracterized.", 1))
+            .isEqualTo("- 1st point of refutation: Globalization has been mischaracterized.");
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "2nd point: Isolationism will hurt the U.S. economically.|- 2nd point: Isolationism will hurt the U.S. economically.",
+        "3rd time's the charm.|- 3rd time's the charm.",
+        "4th of July plans are set.|- 4th of July plans are set.",
+        "21st century skills matter.|- 21st century skills matter."
+    })
+    void otherOrdinalNumbersAreNotMistakenForALabelEither(String itemText, String expected) {
+        assertThat(renderItem(NumberingStyleNames.ARABIC_NUMBERS, itemText, 1)).isEqualTo(expected);
+    }
+
+    /**
+     * A digit run immediately followed by letters that merely start with an
+     * ordinal-suffix-looking pair - not an ordinal number, since the suffix does not end
+     * there - is not mistaken for one: continuesAsOrdinalSuffix also checks that nothing
+     * but a non-letter follows "st"/"nd"/"rd"/"th", so "1sting" (an invented word,
+     * exercising the boundary, not a real ordinal) does not fool it into rejecting a label
+     * that is otherwise perfectly ordinary.
+     */
+    @Test
+    void aDigitFollowedByAWordThatMerelyStartsWithAnOrdinalSuffixIsStillALabel() {
+        assertThat(renderItem(NumberingStyleNames.ARABIC_NUMBERS, "1sting operation", 1))
+            .isEqualTo("1. sting operation");
+    }
+
     @Test
     void aNestedListIsIndentedUnderItsParentItem() {
         String parent = "I. Understanding our inner psychology";
