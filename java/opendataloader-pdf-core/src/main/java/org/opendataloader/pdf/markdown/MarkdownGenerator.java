@@ -180,7 +180,7 @@ public class MarkdownGenerator implements Closeable {
         } else if (object instanceof SemanticTextNode) {
             writeSemanticTextNode((SemanticTextNode) object);
         } else if (object instanceof TableBorder) {
-            writeTable((TableBorder) object);
+            writeTableOrTextBlock((TableBorder) object);
         } else if (object instanceof PDFList) {
             writeList((PDFList) object);
         } else if (object instanceof SemanticTOC) {
@@ -546,6 +546,28 @@ public class MarkdownGenerator implements Closeable {
     }
 
 
+
+    /**
+     * A {@link TableBorder} the geometry layer flags {@link TableBorder#isTextBlock()} is
+     * a single boxed passage with a border around it, not tabular data - a highlighted
+     * excerpt or a callout, geometrically bounded the same way a table cell is, but with
+     * nothing to align into columns. {@code TableSerializer} already demotes exactly this
+     * case to a plain JSON {@code "text block"} rather than a one-cell {@code "table"} with
+     * {@code rows}/{@code cells}; Markdown didn't make the same distinction, so a boxed
+     * paragraph came out as a spurious `\|...\|` / `\|---\|` table instead of running prose -
+     * `writeTable` unconditionally for every {@link TableBorder}. Rendering the box's own
+     * contents the ordinary way here, the same contents {@code TableSerializer} reads from
+     * {@code getCell(0, 0)}, keeps Markdown's table boundary consistent with JSON's: both
+     * agree on which {@link TableBorder}s are real tables and which aren't, since both read
+     * the same {@code isTextBlock()} flag rather than each drawing its own line.
+     */
+    protected void writeTableOrTextBlock(TableBorder table) throws IOException {
+        if (table.isTextBlock()) {
+            writeContents(table.getCell(0, 0).getContents(), false);
+        } else {
+            writeTable(table);
+        }
+    }
 
     protected void writeTable(TableBorder table) throws IOException {
         enterTable();

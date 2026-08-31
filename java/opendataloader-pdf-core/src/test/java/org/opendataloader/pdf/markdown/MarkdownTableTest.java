@@ -241,6 +241,75 @@ public class MarkdownTableTest {
         assertTrue(row1Line.contains("C"), "Row 1 should contain 'C'. Got: " + row1Line);
     }
 
+    /**
+     * A {@link TableBorder} with exactly one cell holding content is a boxed passage with
+     * a border around it - a highlighted excerpt or a callout, not tabular data -
+     * {@code isTextBlock()} says so, and {@code TableSerializer} already reads it that
+     * way for JSON ({@code "text block"} with the cell's own contents, not a one-cell
+     * {@code "table"}). Before this fix, Markdown ignored that flag and wrapped every
+     * {@link TableBorder} in table syntax regardless, so a callout like this one rendered
+     * as a spurious `\|...\|` / `\|---\|` row instead of running prose. This goes through
+     * {@code write(IObject)}, the same dispatch a real document uses, not {@code
+     * writeTable} directly, so it exercises the routing decision itself.
+     *
+     * @see org.opendataloader.pdf.json.serializers.TableSerializer
+     */
+    @Test
+    void testSingleCellTextBlockRendersAsPlainContentNotATable() throws IOException {
+        TableBorderCell cell00 = new TableBorderCell(0, 0, 1, 1, null);
+        addTextContent(cell00, "This is a boxed callout, not a table.");
+        TableBorderRow row0 = new TableBorderRow(0, 1, null);
+        row0.getCells()[0] = cell00;
+
+        TableBorder table = new TableBorder(null, new TableBorderRow[]{row0}, 1, 1);
+        assertTrue(table.isTextBlock(), "Precondition: a single non-empty cell is a text block");
+
+        String markdown = generateMarkdownForObject(table);
+
+        assertFalse(markdown.contains("|"),
+            "A text-block TableBorder must not render as a Markdown table. Got: " + markdown);
+        assertTrue(markdown.contains("This is a boxed callout, not a table."), "Got: " + markdown);
+    }
+
+    /**
+     * The multi-cell case going through the same {@code write(IObject)} dispatch as
+     * above must still render as a real table - the fix routes only the single-cell
+     * {@code isTextBlock()} case away from {@code writeTable}, nothing else.
+     */
+    @Test
+    void testMultiCellTableStillRendersAsATableThroughTheSameDispatch() throws IOException {
+        TableBorderCell cell00 = new TableBorderCell(0, 0, 1, 1, null);
+        addTextContent(cell00, "H1");
+        TableBorderCell cell01 = new TableBorderCell(0, 1, 1, 1, null);
+        addTextContent(cell01, "H2");
+        TableBorderRow row0 = new TableBorderRow(0, 2, null);
+        row0.getCells()[0] = cell00;
+        row0.getCells()[1] = cell01;
+
+        TableBorder table = new TableBorder(null, new TableBorderRow[]{row0}, 1, 2);
+        assertFalse(table.isTextBlock(), "Precondition: two cells is not a text block");
+
+        String markdown = generateMarkdownForObject(table);
+
+        assertTrue(markdown.contains("|"), "A real table must still render as one. Got: " + markdown);
+        assertTrue(markdown.contains("H1") && markdown.contains("H2"), "Got: " + markdown);
+    }
+
+    private String generateMarkdownForObject(org.verapdf.wcag.algorithms.entities.IObject object) throws IOException {
+        File dummyPdf = tempDir.resolve("text-block-dispatch.pdf").toFile();
+        Files.createFile(dummyPdf.toPath());
+        Config config = new Config();
+        config.setOutputFolder(tempDir.toString());
+        config.setGenerateMarkdown(true);
+
+        try (MarkdownGenerator generator = new MarkdownGenerator(dummyPdf, config)) {
+            generator.write(object);
+        }
+
+        File mdFile = tempDir.resolve("text-block-dispatch.md").toFile();
+        return Files.readString(mdFile.toPath()).trim();
+    }
+
     private void addTextContent(TableBorderCell cell, String text) {
         TextChunk chunk = new TextChunk(text);
         TextLine line = new TextLine(chunk);
