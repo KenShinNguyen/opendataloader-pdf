@@ -112,6 +112,16 @@
     <build>
         <resources>
             <resource>
+                <!--
+                    Declaring <resources> at all replaces Maven's default src/main/resources
+                    entry rather than adding to it, so it has to be listed explicitly here -
+                    otherwise GeneratorUtils's bundled wordlist (and anything else under
+                    src/main/resources) is silently absent from target/classes and every
+                    getResourceAsStream lookup against it returns null.
+                -->
+                <directory>${project.basedir}/src/main/resources</directory>
+            </resource>
+            <resource>
                 <directory>${project.basedir}/../../</directory>
                 <includes>
                     <include>LICENSE</include>

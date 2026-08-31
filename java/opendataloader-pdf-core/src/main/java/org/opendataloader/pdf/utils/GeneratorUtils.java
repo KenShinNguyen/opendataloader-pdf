@@ -9,7 +9,18 @@ import org.verapdf.wcag.algorithms.entities.content.TextColumn;
 import org.verapdf.wcag.algorithms.entities.content.TextLine;
 import org.verapdf.wcag.algorithms.semanticalgorithms.containers.StaticContainers;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Assembles the text of a semantic node once, in a single canonical join, so JSON,
@@ -22,56 +33,114 @@ import java.util.List;
  * line held more than one, e.g. a run split by a font or color change), and both
  * assemblies leaned on the semantic layer's {@code TextChunkUtils.formatLineEnd}, which
  * elides a hyphen-minus, a soft hyphen, *and* an em dash alike at a line break, on the
- * assumption that whichever one ends the line is always a word split by the wrap.
- * Auditing every hyphen-minus ending a line across a real book-length sample ("Think for
- * Yourself") turned up zero cases of that - "well-intentioned", "so-called",
- * "fact-checking", "non-smokers", "meta-analysis", "tuk-tuk" and the rest were all a
- * compound word's own hyphen, coincidentally falling at the wrap point, and eliding it
- * merged two words into one ("wellintentioned"). A soft hyphen is different: it exists
- * specifically to mark a discretionary break, so eliding it is still correct. An em dash
- * is punctuation, not a broken word, so it was never elided correctly to begin with.
- * {@link #getTextFromLineForPlainText} and {@link #appendLineJoin} fix all of this for
- * every {@link OutputType}, JSON's {@link OutputType#JSON} included, which is what makes
- * this the one canonical builder.
+ * assumption that whichever one ends the line is always a word split by the wrap. That
+ * assumption is not decidable from the character alone - see {@link #appendLineJoin} for
+ * how a hyphen-minus is actually resolved. {@link #getTextFromLineForPlainText} and
+ * {@link #appendLineJoin} fix all of this for every {@link OutputType}, JSON's
+ * {@link OutputType#JSON} included, which is what makes this the one canonical builder.
  */
 public class GeneratorUtils {
 
+    private static final Logger LOGGER = Logger.getLogger(GeneratorUtils.class.getCanonicalName());
+
     /**
-     * A compound word's own hyphen. Never elided - see the class doc for why a hyphen
-     * ending a line is not reliable evidence of a wrap-hyphenated word.
+     * A hyphen-minus ending a line reads identically whether it is a word split by the
+     * wrap ("congru-" + "ence" -> "congruence") or a compound word's own hyphen that
+     * happens to land at the wrap point ("well-" + "intentioned") - the two are the same
+     * character in the same position, and neither reading is evidence over the other.
+     * {@link #appendLineJoin} resolves this by dictionary lookup instead of a fixed rule:
+     * see {@link #joinsIntoADictionaryWord}.
      */
     private static final char HYPHEN_MINUS = '-';
     /** Exists specifically to mark a discretionary break; elided at a line break. */
-    private static final char SOFT_HYPHEN = '\u00AD';
+    private static final char SOFT_HYPHEN = '­';
     /** Punctuation, not a broken word - kept, and set flush against the text on both sides. */
-    private static final char EM_DASH = '\u2014';
+    private static final char EM_DASH = '—';
     /** The ASCII apostrophe, as used in a contraction or possessive. */
     private static final char APOSTROPHE = '\'';
     /** The typographic apostrophe most PDF text actually uses in place of {@link #APOSTROPHE}. */
-    private static final char RIGHT_SINGLE_QUOTATION_MARK = '\u2019';
+    private static final char RIGHT_SINGLE_QUOTATION_MARK = '’';
+
+    /** Resource path of the wordlist {@link #joinsIntoADictionaryWord} looks up against. */
+    private static final String ENGLISH_WORDS_RESOURCE = "english-words.txt";
+
+    /**
+     * Lazily-loaded, lowercase-only English wordlist (SCOWL, via the Debian {@code
+     * wamerican} package - see THIRD_PARTY_NOTICES.md), used only to settle whether a
+     * hyphen-minus ending a line is a wrap-hyphenated word. Loaded once per process; a
+     * missing or unreadable resource degrades to an empty set rather than failing
+     * document processing, so a hyphen-minus is then always kept, same as before this
+     * dictionary check existed - but only ever as a last resort. A resource this class
+     * ships is not supposed to go missing, so that fallback firing at all is logged at
+     * WARNING: it is silent everywhere else on purpose (a wrong hyphen decision reads as
+     * ordinary text, never an exception), and an empty wordlist quietly reproducing the
+     * pre-dictionary "always keep" behavior for an entire build is exactly the failure
+     * mode most likely to go unnoticed without it - src/main/resources not being on the
+     * build's resource path at all, for one, is what actually happened here once.
+     */
+    private static final class EnglishWords {
+        private static final Set<String> WORDS = load();
+
+        private EnglishWords() {
+        }
+
+        private static Set<String> load() {
+            try (InputStream stream = GeneratorUtils.class.getResourceAsStream(ENGLISH_WORDS_RESOURCE)) {
+                if (stream == null) {
+                    LOGGER.warning(() -> "Wordlist resource " + ENGLISH_WORDS_RESOURCE + " not found; "
+                            + "every hyphen-minus ending a line will be kept rather than "
+                            + "resolved by dictionary lookup.");
+                    return Set.of();
+                }
+                Set<String> words = new HashSet<>(90000);
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (!line.isEmpty()) {
+                            words.add(line);
+                        }
+                    }
+                }
+                return words;
+            } catch (IOException | UncheckedIOException exception) {
+                LOGGER.log(Level.WARNING, exception, () -> "Failed to read wordlist resource "
+                        + ENGLISH_WORDS_RESOURCE + "; every hyphen-minus ending a line will be "
+                        + "kept rather than resolved by dictionary lookup.");
+                return Set.of();
+            }
+        }
+    }
 
     public static String getTextFromTextNode(SemanticTextNode textNode, OutputType outputType) {
         StringBuilder stringBuilder = new StringBuilder();
         for (TextColumn column : textNode.getColumns()) {
             List<TextBlock> blocks = column.getBlocks();
-            for (int i = 0; i < blocks.size() - 1; i++) {
-                TextBlock block = blocks.get(i);
-                stringBuilder.append(getTextFromLines(block.getLines(), outputType));
-                appendLineJoin(stringBuilder);
+            for (int i = 0; i < blocks.size(); i++) {
+                String segment = getTextFromLines(blocks.get(i).getLines(), outputType);
+                if (i == 0) {
+                    stringBuilder.append(segment);
+                } else {
+                    appendLineJoin(stringBuilder, segment);
+                    stringBuilder.append(segment);
+                }
             }
-            stringBuilder.append(getTextFromLines(blocks.get(blocks.size() - 1).getLines(), outputType));
         }
         return LineJoinRepair.repairSplitUrls(stringBuilder.toString());
     }
 
     public static String getTextFromLines(List<TextLine> textLines, OutputType outputType) {
         StringBuilder stringBuilder = new StringBuilder();
-        for (int i = 0; i < textLines.size() - 1; i++) {
-            TextLine line = textLines.get(i);
-            appendLineForOutputType(line, outputType, stringBuilder);
-            appendLineJoin(stringBuilder);
+        for (int i = 0; i < textLines.size(); i++) {
+            StringBuilder segment = new StringBuilder();
+            appendLineForOutputType(textLines.get(i), outputType, segment);
+            if (i == 0) {
+                stringBuilder.append(segment);
+            } else {
+                appendLineJoin(stringBuilder, segment);
+                stringBuilder.append(segment);
+            }
         }
-        appendLineForOutputType(textLines.get(textLines.size() - 1), outputType, stringBuilder);
         return LineJoinRepair.repairSplitUrls(stringBuilder.toString());
     }
 
@@ -127,8 +196,11 @@ public class GeneratorUtils {
      * "intentioned", split by a style change right at the hyphen, not a line wrap), and
      * unlike an ordinary letter, a hyphen or dash already reads as flush against what
      * follows - inserting a space there would read "well- intentioned", not
-     * "well-intentioned". No word boundary needs a space right after one, the way
-     * {@link #appendLineJoin} already treats them at a line break.
+     * "well-intentioned". No word boundary needs a space right after one. Unlike at a line
+     * break, a hyphen sitting at a same-line chunk boundary is not ambiguous the way
+     * {@link #appendLineJoin} has to resolve - nothing about a font or color change looks
+     * like a word wrap, so it is always a compound word's own hyphen here, kept the same
+     * way every time.
      *
      * <p>An apostrophe is the same case again, on either side of the boundary instead of
      * only the trailing one: a contraction or possessive can arrive with its apostrophe as
@@ -159,21 +231,25 @@ public class GeneratorUtils {
      * hyphen-minus, a soft hyphen, and an em dash alike, on the assumption that whichever
      * one ends the line is always a word split by the wrap.
      *
-     * <p>Only a soft hyphen actually says that - it exists specifically to mark a
-     * discretionary break, so eliding it is correct. A hyphen-minus does not say that: a
-     * compound word's own hyphen ("well-intentioned", "so-called", "fact-checking") reads
-     * identically to a wrap-hyphenated one at the character level, and coincidentally
-     * falling at the wrap point - which is exactly when this method runs - is not evidence
-     * either way. Eliding it on that assumption merged real compound words into one
-     * ("wellintentioned"); auditing every hyphen-minus ending a line across a real
-     * book-length sample found this is what a line-ending hyphen-minus actually is, with
-     * no counterexamples. So it is kept, the way an em dash already was: flush against the
-     * text on both sides, nothing added or removed. An apostrophe ending the accumulated
-     * text - a possessive or contraction broken at the apostrophe itself - is kept the
-     * same way, for the same reason {@link #needsChunkSeparator} keeps it flush at a chunk
-     * boundary.
+     * <p>Only a soft hyphen actually says that on its own - it exists specifically to mark
+     * a discretionary break, so eliding it is correct regardless of what the two halves
+     * spell. A hyphen-minus does not say that: a compound word's own hyphen
+     * ("well-intentioned", "so-called") and a genuinely wrap-hyphenated word
+     * ("congru-" + "ence" -> "congruence") read identically at the character level, and
+     * real documents produce both - a ragged-right ebook essentially never wrap-hyphenates,
+     * while a justified academic text hyphenates constantly, and no rule that looks only at
+     * the hyphen and its position can tell the two apart. {@link #joinsIntoADictionaryWord}
+     * settles it the way a reader would: by whether the two halves spell a real word once
+     * joined. An em dash and an apostrophe ending the accumulated text are punctuation and
+     * a mid-word mark, never a line-wrapped word either way, so they are kept unconditionally
+     * the same way a soft hyphen is elided unconditionally - flush against the text on both
+     * sides, nothing added or removed, for the same reason {@link #needsChunkSeparator}
+     * keeps an apostrophe flush at a chunk boundary.
+     *
+     * @param next what {@code stringBuilder} is about to have appended to it - read only to
+     *             settle a trailing hyphen-minus, never modified
      */
-    private static void appendLineJoin(StringBuilder stringBuilder) {
+    private static void appendLineJoin(StringBuilder stringBuilder, CharSequence next) {
         if (StaticContainers.isKeepLineBreaks()) {
             stringBuilder.append('\n');
             return;
@@ -184,9 +260,51 @@ public class GeneratorUtils {
         char last = stringBuilder.charAt(stringBuilder.length() - 1);
         if (last == SOFT_HYPHEN) {
             stringBuilder.deleteCharAt(stringBuilder.length() - 1);
-        } else if (last != EM_DASH && last != HYPHEN_MINUS
-                && last != APOSTROPHE && last != RIGHT_SINGLE_QUOTATION_MARK) {
+        } else if (last == HYPHEN_MINUS) {
+            if (joinsIntoADictionaryWord(stringBuilder, next)) {
+                stringBuilder.deleteCharAt(stringBuilder.length() - 1);
+            }
+        } else if (last != EM_DASH && last != APOSTROPHE && last != RIGHT_SINGLE_QUOTATION_MARK) {
             stringBuilder.append(' ');
         }
+    }
+
+    /**
+     * Whether the letters immediately before the hyphen-minus ending {@code stringBuilder}
+     * and the letters immediately starting {@code next}, joined together, spell a real
+     * English word - the signal {@link #appendLineJoin} uses to tell a wrap-hyphenated word
+     * from a compound word's own hyphen, since the two are not distinguishable any other
+     * way at this point in the text. An empty half on either side (the hyphen is not
+     * actually between two words - a number range, a bare bullet) never counts as a match,
+     * so it falls back to keeping the hyphen, same as a half that fails the lookup.
+     */
+    private static boolean joinsIntoADictionaryWord(StringBuilder stringBuilder, CharSequence next) {
+        String left = trailingLetters(stringBuilder, stringBuilder.length() - 1);
+        if (left.isEmpty()) {
+            return false;
+        }
+        String right = leadingLetters(next);
+        if (right.isEmpty()) {
+            return false;
+        }
+        return EnglishWords.WORDS.contains(left + right);
+    }
+
+    /** The run of letters in {@code text} immediately before index {@code beforeIndex}, lowercased. */
+    private static String trailingLetters(CharSequence text, int beforeIndex) {
+        int start = beforeIndex;
+        while (start > 0 && Character.isLetter(text.charAt(start - 1))) {
+            start--;
+        }
+        return text.subSequence(start, beforeIndex).toString().toLowerCase(Locale.ROOT);
+    }
+
+    /** The run of letters starting {@code text}, lowercased. */
+    private static String leadingLetters(CharSequence text) {
+        int end = 0;
+        while (end < text.length() && Character.isLetter(text.charAt(end))) {
+            end++;
+        }
+        return text.subSequence(0, end).toString().toLowerCase(Locale.ROOT);
     }
 }

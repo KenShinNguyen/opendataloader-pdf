@@ -41,6 +41,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -83,6 +84,11 @@ public class MarkdownGenerator implements Closeable {
      * "number" is not numbering, and CommonMark caps ordered-list markers at 9 digits.
      */
     private static final int MAX_LIST_NUMBER_DIGITS = 9;
+    /**
+     * English ordinal suffixes - see {@link #continuesAsOrdinalSuffix}. Lowercased before
+     * the lookup, so this set only needs the lowercase forms.
+     */
+    private static final Set<String> ORDINAL_SUFFIXES = Set.of("st", "nd", "rd", "th");
 
     MarkdownGenerator(File inputPdf, Config config) throws IOException {
         String cutPdfFileName = inputPdf.getName();
@@ -394,6 +400,15 @@ public class MarkdownGenerator implements Closeable {
      * numbering scheme continues a label straight into a decimal fraction that way -
      * "1. Desire to belong" is followed by a space, not "1.5". That's enough to tell the
      * two apart without needing to know anything else about the document.
+     *
+     * <p>An ordinal number in running prose reads the same way for the same reason: "1st
+     * point of refutation..." starts with digits, so it was detected as a one-item list
+     * with a reported label of "1" - a real span of the text, but the start of "1st", not
+     * a list marker. Reusing it split the word itself: the label became the marker and
+     * "st point of refutation..." was left as the item's text ("1. st point of
+     * refutation..."). {@link #continuesAsOrdinalSuffix}, checked from the same leading
+     * digit run, catches this the same way {@link #continuesAsDecimalFraction} catches a
+     * decimal: no genuine numbering label runs straight into "st"/"nd"/"rd"/"th" either.
      */
     private static String readLabel(String itemText, int labelLength) {
         if (labelLength <= 0 || labelLength > itemText.length()) {
@@ -419,7 +434,7 @@ public class MarkdownGenerator implements Closeable {
         if (labelLength < itemText.length() && Character.isDigit(itemText.charAt(labelLength))) {
             return null;
         }
-        if (continuesAsDecimalFraction(itemText, digits)) {
+        if (continuesAsDecimalFraction(itemText, digits) || continuesAsOrdinalSuffix(itemText, digits)) {
             return null;
         }
         return label;
@@ -445,6 +460,27 @@ public class MarkdownGenerator implements Closeable {
         }
         int afterDelimiter = leadingDigits + 1;
         return afterDelimiter < itemText.length() && Character.isDigit(itemText.charAt(afterDelimiter));
+    }
+
+    /**
+     * Whether itemText, read from the end of its own leading digit run, continues straight
+     * into an English ordinal suffix ("st", "nd", "rd", "th") that is not itself the start
+     * of some longer word ("1sting" is not "1st" + "ing" read as prose) - the same
+     * end-of-digit-run check {@link #continuesAsDecimalFraction} uses for a decimal
+     * fraction, for the same reason: no genuine numbering label is followed immediately by
+     * an ordinal suffix, so finding one here means the digits are the front of an ordinal
+     * number in running text, not a label.
+     */
+    private static boolean continuesAsOrdinalSuffix(String itemText, int leadingDigits) {
+        int suffixEnd = leadingDigits + 2;
+        if (suffixEnd > itemText.length()) {
+            return false;
+        }
+        String suffix = itemText.substring(leadingDigits, suffixEnd).toLowerCase(Locale.ROOT);
+        if (!ORDINAL_SUFFIXES.contains(suffix)) {
+            return false;
+        }
+        return suffixEnd == itemText.length() || !Character.isLetter(itemText.charAt(suffixEnd));
     }
 
     /**

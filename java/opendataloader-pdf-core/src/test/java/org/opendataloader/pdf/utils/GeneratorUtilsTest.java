@@ -61,23 +61,55 @@ class GeneratorUtilsTest {
 
     /**
      * A hyphen-minus ending a line reads identically whether it is a wrap-hyphenated word
-     * ("congru-" + "ence" -> "congruence" would be the old assumption) or a compound
-     * word's own hyphen that happens to land at the wrap point ("well-" + "intentioned").
-     * Auditing every hyphen-minus ending a line across a real book-length sample ("Think
-     * for Yourself") found only the second case - "well-intentioned", "so-called",
-     * "fact-checking", "non-smokers", "meta-analysis", "well-organized", "tuk-tuk",
-     * "Kilowatt-Hour" - with zero genuine wrap-hyphenation, so it is kept rather than
-     * elided: eliding it on the old assumption merged real compound words into one
-     * ("wellintentioned").
+     * ("congru-" + "ence" -> "congruence") or a compound word's own hyphen that happens to
+     * land at the wrap point ("well-" + "intentioned") - a fixed rule cannot tell these
+     * apart (auditing a ragged-right ebook found only the second case, "well-intentioned",
+     * "so-called", "fact-checking" and the rest; auditing a justified academic text found
+     * mostly the first, "congres-sional", "dino-saurs", "cat-egories"), so the dictionary
+     * lookup in joinsIntoADictionaryWord decides instead: "wellintentioned" is not a real
+     * word, so the hyphen stays.
      */
     @Test
-    void testGetTextFromLines_keepsHyphenMinusAtLineBreak() {
+    void testGetTextFromLines_keepsHyphenMinusAtLineBreak_whenTheJoinedWordIsNotReal() {
         TextLine line1 = new TextLine(new TextChunk("well-"));
         TextLine line2 = new TextLine(new TextChunk("intentioned people"));
 
         String text = GeneratorUtils.getTextFromLines(List.of(line1, line2), OutputType.JSON);
 
         assertEquals("well-intentioned people", text);
+    }
+
+    /**
+     * Same hyphen, same position, opposite answer: "congressional" is a real word, so the
+     * dictionary lookup elides the hyphen. Found in real output from "Read, Reason, Write"
+     * (a justified academic text, where wrap-hyphenation like this is common) as
+     * "congres-sional" - the fixed keep-everything rule above would have left it broken.
+     */
+    @Test
+    void testGetTextFromLines_elidesHyphenMinusAtLineBreak_whenTheJoinedWordIsReal() {
+        TextLine line1 = new TextLine(new TextChunk("congres-"));
+        TextLine line2 = new TextLine(new TextChunk("sional representative"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line1, line2), OutputType.JSON);
+
+        assertEquals("congressional representative", text);
+    }
+
+    /**
+     * A hyphen-minus at a line break that is not actually splitting a word on at least one
+     * side - a number range broken mid-line, a bullet dash starting a new line - has an
+     * empty half on the side that isn't letters, so the dictionary lookup never runs at
+     * all and the hyphen is kept, the same conservative fallback as a real word that
+     * simply isn't in the list.
+     */
+    @Test
+    void testGetTextFromLines_keepsHyphenMinusAtLineBreak_whenEitherSideHasNoLetters() {
+        TextLine line1 = new TextLine(new TextChunk("pages 12-"));
+        TextLine line2 = new TextLine(new TextChunk("15 cover this"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line1, line2), OutputType.JSON);
+
+        assertEquals("pages 12-15 cover this", text);
     }
 
     /**
@@ -224,9 +256,8 @@ class GeneratorUtilsTest {
      * line break - is never examined by any of this join logic at all; it is just part of
      * a chunk's own value, passed through unchanged. So a compound word's own hyphen
      * ("well-intentioned") survives regardless of where within a line it happens to fall,
-     * in contrast to a hyphen that genuinely does sit at a wrap point (elided by
-     * testGetTextFromLines_elidesHyphenMinusAtLineBreak above, since that one really is
-     * splitting one word across two lines).
+     * in contrast to a hyphen genuinely splitting a word at a line break, which the
+     * dictionary lookup above may or may not elide depending on what the two halves spell.
      */
     @Test
     void testGetTextFromLines_keepsAnInternalHyphenThatIsNotAtALineBreak() {

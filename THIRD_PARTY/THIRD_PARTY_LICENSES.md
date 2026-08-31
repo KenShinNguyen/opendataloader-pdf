@@ -276,6 +276,7 @@ Hancom, Inc. distributes the veraPDF components under the Mozilla Public License
 | resolve-pkg-maps | 1.0.0 | MIT | https://github.com/privatenumber/resolve-pkg-maps |
 | rollup/rollup | 4.53.2 | MIT | https://github.com/rollup/rollup |
 | Saxon XSLT and XQuery Processor | 12.8 | MPL-2.0 | http://saxon.sourceforge.net |
+| SCOWL (Spell Checker Oriented Word Lists), via Debian `wamerican` | 2020.12.07 | Permissive (see NOTICES) | http://wordlist.sourceforge.net/ |
 | shebang-command | 2.0.0 | MIT | https://github.com/kevva/shebang-command |
 | shebang-regex | 3.0.0 | MIT | https://github.com/sindresorhus/shebang-regex |
 | siginfo | 2.0.0 | ISC | https://github.com/emilbayes/siginfo |
