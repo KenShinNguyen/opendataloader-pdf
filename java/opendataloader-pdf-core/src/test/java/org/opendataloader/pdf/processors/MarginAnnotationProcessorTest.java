@@ -207,6 +207,51 @@ public class MarginAnnotationProcessorTest {
     }
 
     /**
+     * Not every footnote-marker column is spaced like page 10's - some sit close
+     * enough together (real output: "Nicholas Haslam" essay) that the plain
+     * vertical-gap check above would read them as one multi-line callout and
+     * merge them into a single nonsensical annotation ("1 2" instead of two
+     * separate ones). A bare digit is always its own standalone marker, no matter
+     * how close its neighbor sits - this must produce two annotations, not one.
+     */
+    @Test
+    public void tightlySpacedBareMarkersAreNotMergedIntoOne() {
+        TextLine body = textLineAt("PREREADING QUESTIONS How do you use the word trauma?",
+            84.003, 85.669, 483.314, 104.44);
+        TextLine marker1 = textLineAt("1", 489.601, 444.287, 492.901, 455.906);
+        TextLine marker2 = textLineAt("2", 489.601, 432.287, 492.901, 443.906);
+        List<IObject> contents = new ArrayList<>(List.of(body, marker1, marker2));
+
+        MarginAnnotationProcessor.Extraction extraction =
+                MarginAnnotationProcessor.extractMarginAnnotationsFromTextLines(contents);
+
+        assertThat(extraction.remaining).containsExactly(body);
+        assertThat(extraction.annotations).hasSize(2);
+    }
+
+    /**
+     * The same guard has to hold when the tight neighbor isn't another bare
+     * marker but a real callout's own text: a leader-line connector digit sitting
+     * just above "1st point of refutation..." must not fuse onto it ("2 1st
+     * point of refutation..."), losing the digit's own identity as a marker.
+     */
+    @Test
+    public void bareMarkerDoesNotFuseOntoAnAdjacentCalloutsText() {
+        TextLine body = textLineAt("Body text continues across the full column width here.",
+            128.758, 80.839, 490.987, 104.44);
+        TextLine marker = textLineAt("2", 50.162, 432.287, 53.462, 443.906);
+        TextLine calloutText = textLineAt("1st point of refutation: Globalization has been mischaracterized.",
+            50.162, 420.287, 106.066, 431.906);
+        List<IObject> contents = new ArrayList<>(List.of(body, marker, calloutText));
+
+        MarginAnnotationProcessor.Extraction extraction =
+                MarginAnnotationProcessor.extractMarginAnnotationsFromTextLines(contents);
+
+        assertThat(extraction.remaining).containsExactly(body);
+        assertThat(extraction.annotations).hasSize(2);
+    }
+
+    /**
      * A genuine multi-line margin callout ("Introduction connects ambivalence in
      * American character to conflict over gun control.", real 3-line geometry from
      * page 37, body column matching the left-margin-annotation page style used

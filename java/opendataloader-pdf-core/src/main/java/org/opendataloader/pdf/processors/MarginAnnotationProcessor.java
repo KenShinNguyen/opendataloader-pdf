@@ -222,6 +222,7 @@ public class MarginAnnotationProcessor {
         TextLine previous = null;
         for (TextLine line : sorted) {
             boolean sameParagraphAsPrevious = previous != null
+                    && !isBareNumber(previous) && !isBareNumber(line)
                     && previous.getBottomY() - line.getTopY() <= LINE_GROUPING_MAX_GAP_RATIO * previous.getHeight();
             if (!sameParagraphAsPrevious) {
                 current = new SemanticParagraph();
@@ -231,6 +232,22 @@ public class MarginAnnotationProcessor {
             previous = line;
         }
         return paragraphs;
+    }
+
+    /**
+     * A bare footnote/endnote reference marker, or a leader-line connector digit,
+     * is always its own standalone unit - never a fragment of a longer text run,
+     * even when several sit close enough together to look like consecutive lines
+     * of one callout. Without this guard, a tightly-stacked column of markers
+     * (unlike page 51's, spaced dozens of points apart at each paragraph's own
+     * start) merges into one nonsensical annotation ("1 2", "36 37 38 39"), or a
+     * connector digit fuses onto an unrelated neighboring callout's own text
+     * ("2 1st point of refutation: ..."). A real multi-line callout's lines are
+     * prose fragments, never bare digits, so this never blocks a legitimate merge.
+     */
+    private static boolean isBareNumber(TextLine line) {
+        String value = line.getValue();
+        return value != null && !value.isEmpty() && value.chars().allMatch(Character::isDigit);
     }
 
     private static List<IObject> bodyCandidates(List<IObject> pageContents, Class<? extends IObject> candidateType) {
