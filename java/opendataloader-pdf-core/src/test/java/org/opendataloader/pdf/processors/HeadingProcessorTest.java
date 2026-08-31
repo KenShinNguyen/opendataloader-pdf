@@ -55,6 +55,65 @@ public class HeadingProcessorTest {
         Assertions.assertTrue(contents.get(0) instanceof SemanticHeading);
     }
 
+    /**
+     * A drop cap scores exactly like a real heading on font size and weight alone - that
+     * is the entire point of a drop cap - so isBodyText's size comparison cannot veto it.
+     * "“D" (a paragraph opening with quoted dialogue, its drop-capped first letter
+     * split into its own node) at heading-sized font, followed by "efine your terms!" at
+     * body size, must stay a plain paragraph: concatenating the two spells "define", a
+     * real word, which is exactly what tells this apart from an actual heading. Found in
+     * real output from "Read, Reason, Write" as a spurious "# “D" heading.
+     */
+    @Test
+    public void aDropCapIsNotMistakenForAHeading() {
+        StaticContainers.setIsDataLoader(true);
+        StaticLayoutContainers.setHeadings(new ArrayList<>());
+        List<IObject> contents = new ArrayList<>();
+        SemanticParagraph dropCap = new SemanticParagraph();
+        contents.add(dropCap);
+        dropCap.add(new TextLine(new TextChunk(new BoundingBox(0, 10.0, 30.0, 20.0, 40.0),
+            "“D", "Font1", 20, 700, 0, 30.0, new double[]{0.0},
+            null, 0)));
+        SemanticParagraph rest = new SemanticParagraph();
+        contents.add(rest);
+        rest.add(new TextLine(new TextChunk(new BoundingBox(0, 10.0, 20.0, 20.0, 30.0),
+            "efine your terms!", "Font1", 10, 700, 0, 20.0, new double[]{0.5},
+            null, 0)));
+
+        HeadingProcessor.processHeadings(contents, false);
+
+        assertThat(contents.get(0)).isNotInstanceOf(SemanticHeading.class);
+    }
+
+    /**
+     * A drop-capped letter that is already a complete one-letter word on its own - "I" -
+     * is the same bug in a different shape: the next node starts an unrelated word
+     * ("really"), so "I" + "really" concatenating into "ireally" is never going to be a
+     * real word, unlike "D" + "efine". Checking whether the bare letter is already a word
+     * catches this case too. Found in real output as a spurious "# “I" heading opening a
+     * paragraph of quoted dialogue ("I really love Spencer's Camaro...").
+     */
+    @Test
+    public void aDropCapThatIsAlreadyAOneLetterWordOnItsOwnIsNotMistakenForAHeading() {
+        StaticContainers.setIsDataLoader(true);
+        StaticLayoutContainers.setHeadings(new ArrayList<>());
+        List<IObject> contents = new ArrayList<>();
+        SemanticParagraph dropCap = new SemanticParagraph();
+        contents.add(dropCap);
+        dropCap.add(new TextLine(new TextChunk(new BoundingBox(0, 10.0, 30.0, 20.0, 40.0),
+            "“I", "Font1", 20, 700, 0, 30.0, new double[]{0.0},
+            null, 0)));
+        SemanticParagraph rest = new SemanticParagraph();
+        contents.add(rest);
+        rest.add(new TextLine(new TextChunk(new BoundingBox(0, 10.0, 20.0, 20.0, 30.0),
+            "really love Spencer’s Camaro", "Font1", 10, 700, 0, 20.0, new double[]{0.5},
+            null, 0)));
+
+        HeadingProcessor.processHeadings(contents, false);
+
+        assertThat(contents.get(0)).isNotInstanceOf(SemanticHeading.class);
+    }
+
     @Test
     public void testDetectHeadingsLevels() {
         StaticContainers.setIsDataLoader(true);

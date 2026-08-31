@@ -49,7 +49,7 @@ public class GeneratorUtils {
      * happens to land at the wrap point ("well-" + "intentioned") - the two are the same
      * character in the same position, and neither reading is evidence over the other.
      * {@link #appendLineJoin} resolves this by dictionary lookup instead of a fixed rule:
-     * see {@link #joinsIntoADictionaryWord}.
+     * see {@link #elidesHyphenBecauseItJoinsAWord}.
      */
     private static final char HYPHEN_MINUS = '-';
     /** Exists specifically to mark a discretionary break; elided at a line break. */
@@ -61,19 +61,60 @@ public class GeneratorUtils {
     /** The typographic apostrophe most PDF text actually uses in place of {@link #APOSTROPHE}. */
     private static final char RIGHT_SINGLE_QUOTATION_MARK = '’';
 
-    /** Resource path of the wordlist {@link #joinsIntoADictionaryWord} looks up against. */
+    /**
+     * What can follow an apostrophe without a space, because it continues the same word
+     * rather than starting the next one: the standard modern English contraction/clitic
+     * suffixes ("can" + "'t", "I" + "'m", "you" + "'re", "we" + "'ve", "I" + "'ll",
+     * "it" + "'s", "I" + "'d"). Anything else - an ordinary word, not a suffix from this
+     * fixed set - means the apostrophe closed a complete word (most often a plural
+     * possessive: "consumers'", "the United States'") and the text after it starts a new
+     * one, so a space belongs there. Checked against the *entire* run of letters after the
+     * apostrophe, not just a prefix of it, so an ordinary word that merely starts with one
+     * of these letters ("consumers'" + "personal") is never mistaken for a suffix.
+     */
+    private static final Set<String> CONTRACTION_SUFFIXES = Set.of("t", "s", "m", "d", "ll", "ve", "re");
+
+    /**
+     * The only two words that legitimately follow a suspended hyphen at a line break:
+     * "seventeenth-" wrapping onto "and eighteenth-century" is elliptical coordination
+     * ("seventeenth- and eighteenth-century", short for "...century and eighteenth-
+     * century"), not a broken word - the hyphen is real and stays, but unlike a genuine
+     * compound word's hyphen ("well-intentioned"), a space still belongs right after it,
+     * matching how the construction is always set in running prose. A coordinator
+     * immediately after a *kept* hyphen is the one reliable signal for this: nothing else
+     * legitimately follows a suspended hyphen this way.
+     */
+    private static final Set<String> SUSPENDED_HYPHEN_COORDINATORS = Set.of("and", "or");
+
+    /**
+     * A word the bundled dictionary itself disagrees with convention about: the solid
+     * spelling is a real, attested variant, but not the one a wrap-hyphenated occurrence
+     * should resolve to. "Posttraumatic" is accepted usage (the DSM's own historical
+     * spelling, among others), yet "post-traumatic" is what running prose actually writes
+     * and what a reader expects restored - eliding the hyphen because the solid form
+     * happens to also be "a real word" would be correct by the dictionary's letter and
+     * wrong in practice. This is a narrow, evidence-based exception, not a general
+     * mechanism: the wordlist's move to a larger SCOWL tier (needed for words like
+     * "systemically"/"counterarguments" that have no hyphenated form at all to fall back
+     * to) surfaces a few real words this way, dual-spelling compounds where the solid form
+     * is also technically valid; add to this set only ones actually found broken, the way
+     * this one was, not preemptively.
+     */
+    private static final Set<String> DUAL_SPELLING_KEEP_HYPHENATED = Set.of("posttraumatic");
+
+    /** Resource path of the wordlist {@link #elidesHyphenBecauseItJoinsAWord} looks up against. */
     private static final String ENGLISH_WORDS_RESOURCE = "english-words.txt";
 
     /**
-     * Lazily-loaded, lowercase-only English wordlist (SCOWL, via the Debian {@code
-     * wamerican} package - see THIRD_PARTY_NOTICES.md), used only to settle whether a
-     * hyphen-minus ending a line is a wrap-hyphenated word. Loaded once per process; a
-     * missing or unreadable resource degrades to an empty set rather than failing
-     * document processing, so a hyphen-minus is then always kept, same as before this
-     * dictionary check existed - but only ever as a last resort. A resource this class
-     * ships is not supposed to go missing, so that fallback firing at all is logged at
-     * WARNING: it is silent everywhere else on purpose (a wrong hyphen decision reads as
-     * ordinary text, never an exception), and an empty wordlist quietly reproducing the
+     * Lazily-loaded, lowercase-only English wordlist (SCOWL's "huge" tier, via the Debian
+     * {@code wamerican-huge} package - see THIRD_PARTY_NOTICES.md), used only to settle
+     * whether a hyphen-minus ending a line is a wrap-hyphenated word. Loaded once per
+     * process; a missing or unreadable resource degrades to an empty set rather than
+     * failing document processing, so a hyphen-minus is then always kept, same as before
+     * this dictionary check existed - but only ever as a last resort. A resource this
+     * class ships is not supposed to go missing, so that fallback firing at all is logged
+     * at WARNING: it is silent everywhere else on purpose (a wrong hyphen decision reads
+     * as ordinary text, never an exception), and an empty wordlist quietly reproducing the
      * pre-dictionary "always keep" behavior for an entire build is exactly the failure
      * mode most likely to go unnoticed without it - src/main/resources not being on the
      * build's resource path at all, for one, is what actually happened here once.
@@ -92,7 +133,7 @@ public class GeneratorUtils {
                             + "resolved by dictionary lookup.");
                     return Set.of();
                 }
-                Set<String> words = new HashSet<>(90000);
+                Set<String> words = new HashSet<>(320000);
                 try (BufferedReader reader = new BufferedReader(
                         new InputStreamReader(stream, StandardCharsets.UTF_8))) {
                     String line;
@@ -110,6 +151,19 @@ public class GeneratorUtils {
                 return Set.of();
             }
         }
+    }
+
+    /**
+     * Whether {@code word} is a real English word, per the same bundled wordlist {@link
+     * #elidesHyphenBecauseItJoinsAWord} uses to resolve a wrap-hyphenated line break.
+     * Exposed for {@code HeadingProcessor}'s drop-cap check, which needs the same "is this
+     * really a word" question this class already answers for a different reason - a drop
+     * cap concatenated with the paragraph's own next few letters spells a real word,
+     * because that is literally what a drop cap is: the paragraph's own first letter,
+     * rendered oversized and split into its own node by the layout, not a heading.
+     */
+    public static boolean isEnglishWord(String word) {
+        return word != null && EnglishWords.WORDS.contains(word.toLowerCase(Locale.ROOT));
     }
 
     public static String getTextFromTextNode(SemanticTextNode textNode, OutputType outputType) {
@@ -200,26 +254,35 @@ public class GeneratorUtils {
      * break, a hyphen sitting at a same-line chunk boundary is not ambiguous the way
      * {@link #appendLineJoin} has to resolve - nothing about a font or color change looks
      * like a word wrap, so it is always a compound word's own hyphen here, kept the same
-     * way every time.
+     * way every time. An em dash starting the next chunk is the same case in the other
+     * direction ("laissez-faire" + "—to let..." split right before the dash) - flush
+     * against what comes before it either way, so it needs no separator on either side.
      *
-     * <p>An apostrophe is the same case again, on either side of the boundary instead of
-     * only the trailing one: a contraction or possessive can arrive with its apostrophe as
-     * its own chunk ("I" + "'" + "m", "can" + "'t", "Wright" + "'s"), and both the chunk
-     * before it and the chunk after already read as flush against the apostrophe - the
-     * ordinary rule alone would read either boundary as a missing word gap and produce
-     * "I ' m" or "Wright ' s".
+     * <p>An apostrophe is closer to the hyphen/dash case than it first looks, but only
+     * conditionally: a contraction can arrive with its apostrophe as its own chunk
+     * ("I" + "'" + "m", "can" + "'t") and the ordinary rule alone would read either
+     * boundary as a missing word gap ("I ' m"). But an apostrophe ending a chunk is just as
+     * often the end of a *complete* word - a plural possessive ("consumers'", "the United
+     * States'") - with the next chunk starting an unrelated one, where a space genuinely
+     * belongs ("consumers' personal", not "consumers'personal"). {@link
+     * #CONTRACTION_SUFFIXES} tells the two apart: only when the entire next chunk's
+     * leading word is one of the small set of letters that actually continue a word after
+     * an apostrophe is the boundary suppressed; anything else falls through to the
+     * ordinary whitespace rule, the same as any other letter would.
      */
     public static boolean needsChunkSeparator(StringBuilder stringBuilder, String nextValue) {
         if (stringBuilder.length() == 0 || nextValue.isEmpty()) {
             return false;
         }
         char last = stringBuilder.charAt(stringBuilder.length() - 1);
-        if (last == HYPHEN_MINUS || last == SOFT_HYPHEN || last == EM_DASH
-                || last == APOSTROPHE || last == RIGHT_SINGLE_QUOTATION_MARK) {
+        if (last == HYPHEN_MINUS || last == SOFT_HYPHEN || last == EM_DASH) {
+            return false;
+        }
+        if ((last == APOSTROPHE || last == RIGHT_SINGLE_QUOTATION_MARK) && continuesAsContraction(nextValue)) {
             return false;
         }
         char next = nextValue.charAt(0);
-        if (next == APOSTROPHE || next == RIGHT_SINGLE_QUOTATION_MARK) {
+        if (next == APOSTROPHE || next == RIGHT_SINGLE_QUOTATION_MARK || next == EM_DASH) {
             return false;
         }
         return !Character.isWhitespace(last) && !Character.isWhitespace(next);
@@ -238,16 +301,21 @@ public class GeneratorUtils {
      * ("congru-" + "ence" -> "congruence") read identically at the character level, and
      * real documents produce both - a ragged-right ebook essentially never wrap-hyphenates,
      * while a justified academic text hyphenates constantly, and no rule that looks only at
-     * the hyphen and its position can tell the two apart. {@link #joinsIntoADictionaryWord}
-     * settles it the way a reader would: by whether the two halves spell a real word once
-     * joined. An em dash and an apostrophe ending the accumulated text are punctuation and
-     * a mid-word mark, never a line-wrapped word either way, so they are kept unconditionally
-     * the same way a soft hyphen is elided unconditionally - flush against the text on both
-     * sides, nothing added or removed, for the same reason {@link #needsChunkSeparator}
-     * keeps an apostrophe flush at a chunk boundary.
+     * the hyphen and its position can tell the two apart. {@link
+     * #elidesHyphenBecauseItJoinsAWord} settles it the way a reader would: by whether the
+     * two halves spell a real word once joined. A suspended hyphen right before a
+     * coordinator ("seventeenth-" + "and eighteenth-century") is neither case: the hyphen
+     * is real and stays like a compound word's own, but a space still belongs after it,
+     * unlike a compound word's - see {@link #SUSPENDED_HYPHEN_COORDINATORS}. An em dash
+     * ending the accumulated text, or starting what comes next, is punctuation, never a
+     * line-wrapped word either way, so it is kept unconditionally flush against the text on
+     * both sides, the same as a soft hyphen is elided unconditionally. An apostrophe ending
+     * the accumulated text is conditional the same way {@link #needsChunkSeparator} treats
+     * one: flush only when what follows actually continues the same word.
      *
      * @param next what {@code stringBuilder} is about to have appended to it - read only to
-     *             settle a trailing hyphen-minus, never modified
+     *             settle a trailing hyphen-minus or apostrophe, or a leading em dash, never
+     *             modified
      */
     private static void appendLineJoin(StringBuilder stringBuilder, CharSequence next) {
         if (StaticContainers.isKeepLineBreaks()) {
@@ -260,13 +328,26 @@ public class GeneratorUtils {
         char last = stringBuilder.charAt(stringBuilder.length() - 1);
         if (last == SOFT_HYPHEN) {
             stringBuilder.deleteCharAt(stringBuilder.length() - 1);
-        } else if (last == HYPHEN_MINUS) {
-            if (joinsIntoADictionaryWord(stringBuilder, next)) {
-                stringBuilder.deleteCharAt(stringBuilder.length() - 1);
-            }
-        } else if (last != EM_DASH && last != APOSTROPHE && last != RIGHT_SINGLE_QUOTATION_MARK) {
-            stringBuilder.append(' ');
+            return;
         }
+        if (last == HYPHEN_MINUS) {
+            if (elidesHyphenBecauseItJoinsAWord(stringBuilder, next)) {
+                stringBuilder.deleteCharAt(stringBuilder.length() - 1);
+            } else if (isSuspendedHyphenCoordinator(next)) {
+                stringBuilder.append(' ');
+            }
+            return;
+        }
+        if (last == EM_DASH) {
+            return;
+        }
+        if ((last == APOSTROPHE || last == RIGHT_SINGLE_QUOTATION_MARK) && continuesAsContraction(next)) {
+            return;
+        }
+        if (startsWithEmDash(next)) {
+            return;
+        }
+        stringBuilder.append(' ');
     }
 
     /**
@@ -276,9 +357,11 @@ public class GeneratorUtils {
      * from a compound word's own hyphen, since the two are not distinguishable any other
      * way at this point in the text. An empty half on either side (the hyphen is not
      * actually between two words - a number range, a bare bullet) never counts as a match,
-     * so it falls back to keeping the hyphen, same as a half that fails the lookup.
+     * so it falls back to keeping the hyphen, same as a half that fails the lookup - and so
+     * does a match against {@link #DUAL_SPELLING_KEEP_HYPHENATED}, a word whose solid form
+     * happens to also be real but isn't the spelling to resolve to here.
      */
-    private static boolean joinsIntoADictionaryWord(StringBuilder stringBuilder, CharSequence next) {
+    private static boolean elidesHyphenBecauseItJoinsAWord(StringBuilder stringBuilder, CharSequence next) {
         String left = trailingLetters(stringBuilder, stringBuilder.length() - 1);
         if (left.isEmpty()) {
             return false;
@@ -287,7 +370,22 @@ public class GeneratorUtils {
         if (right.isEmpty()) {
             return false;
         }
-        return EnglishWords.WORDS.contains(left + right);
+        String joined = left + right;
+        return EnglishWords.WORDS.contains(joined) && !DUAL_SPELLING_KEEP_HYPHENATED.contains(joined);
+    }
+
+    /** Whether the entire word starting {@code next} is one of {@link #CONTRACTION_SUFFIXES}. */
+    private static boolean continuesAsContraction(CharSequence next) {
+        return CONTRACTION_SUFFIXES.contains(leadingLetters(next));
+    }
+
+    /** Whether the entire word starting {@code next} is one of {@link #SUSPENDED_HYPHEN_COORDINATORS}. */
+    private static boolean isSuspendedHyphenCoordinator(CharSequence next) {
+        return SUSPENDED_HYPHEN_COORDINATORS.contains(leadingLetters(next));
+    }
+
+    private static boolean startsWithEmDash(CharSequence next) {
+        return next.length() > 0 && next.charAt(0) == EM_DASH;
     }
 
     /** The run of letters in {@code text} immediately before index {@code beforeIndex}, lowercased. */

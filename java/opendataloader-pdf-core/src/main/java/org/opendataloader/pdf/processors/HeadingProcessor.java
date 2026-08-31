@@ -17,6 +17,7 @@ package org.opendataloader.pdf.processors;
 
 import org.opendataloader.pdf.containers.StaticLayoutContainers;
 import org.opendataloader.pdf.utils.BulletedParagraphUtils;
+import org.opendataloader.pdf.utils.GeneratorUtils;
 import org.opendataloader.pdf.utils.HeadingHeuristics;
 import org.opendataloader.pdf.utils.TextNodeStatistics;
 import org.opendataloader.pdf.utils.TextNodeUtils;
@@ -95,7 +96,7 @@ public class HeadingProcessor {
                 probability += BULLETED_HEADING_PROBABILITY;
             }
             if (probability > HEADING_PROBABILITY && textNode.getSemanticType() != SemanticType.LIST
-                && !isBodyText(textNode, textNodeStatistics)) {
+                && !isBodyText(textNode, textNodeStatistics) && !isDropCap(textNode, nextNode)) {
                 textNode.setSemanticType(SemanticType.HEADING);
             }
             if (textNode.getSemanticType() == SemanticType.HEADING && textNode.getInitialSemanticType() == SemanticType.LIST) {
@@ -141,6 +142,77 @@ public class HeadingProcessor {
             return false;
         }
         return HeadingHeuristics.looksLikeSentence(textNode.getValue());
+    }
+
+    /**
+     * Whether {@code textNode} is really a drop cap - a single oversized letter opening a
+     * paragraph - rather than a genuine heading the score above mistook it for.
+     *
+     * <p>{@link #isBodyText} cannot catch this case: it vetoes a heading score by
+     * comparing font size against the page's dominant size, but a drop cap is
+     * *supposed* to be dramatically larger than body text - that is the entire point of
+     * one - so it reads exactly like a real heading on size and weight alone, the two
+     * signals that veto relies on.
+     *
+     * <p>What actually tells them apart is what a drop cap is a letter *of*: it is
+     * literally the paragraph's own first letter, rendered oversized and separated into
+     * its own node by the layout. Most of the time the rest of that same word continues
+     * in the very next node at ordinary size ("D" then "efine your terms!" - the
+     * paragraph reads "Define your terms!", split across the two), and concatenating the
+     * two spells a real word purely because that is what actually happened on the page; a
+     * genuine heading's text does not coincidentally continue into the next paragraph's
+     * opening letters this way. But a drop-capped letter can also already be a complete
+     * one-letter word on its own - English has exactly two, "I" and "a" - with the next
+     * node starting an unrelated word of its own ("I" then "really love Spencer's
+     * Camaro...", not "I" + "really" concatenating into anything): that case is checked
+     * for on its own too, since concatenation would wrongly fail it. Restricted to a
+     * single-letter candidate (a real heading is essentially never reducible to one bare
+     * letter) so this never second-guesses an ordinary short heading like "FAQ" or
+     * "Part I".
+     */
+    private static boolean isDropCap(SemanticTextNode textNode, SemanticTextNode nextNode) {
+        String letter = onlyLetters(textNode.getValue());
+        if (letter.length() != 1) {
+            return false;
+        }
+        if (GeneratorUtils.isEnglishWord(letter)) {
+            return true;
+        }
+        if (nextNode == null) {
+            return false;
+        }
+        String nextLetters = leadingLetters(nextNode.getValue());
+        if (nextLetters.isEmpty()) {
+            return false;
+        }
+        return GeneratorUtils.isEnglishWord(letter + nextLetters);
+    }
+
+    /** Every letter in {@code text}, punctuation and whitespace dropped - a drop cap's own quote marks included. */
+    private static String onlyLetters(String text) {
+        if (text == null) {
+            return "";
+        }
+        StringBuilder letters = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (Character.isLetter(c)) {
+                letters.append(c);
+            }
+        }
+        return letters.toString();
+    }
+
+    /** The run of letters starting {@code text}. */
+    private static String leadingLetters(String text) {
+        if (text == null) {
+            return "";
+        }
+        int end = 0;
+        while (end < text.length() && Character.isLetter(text.charAt(end))) {
+            end++;
+        }
+        return text.substring(0, end);
     }
 
     private static List<IObject> disassemblePDFList(PDFList list) {

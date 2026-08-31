@@ -1,7 +1,7 @@
 SCOWL (Spell Checker Oriented Word Lists)
 http://wordlist.sourceforge.net/
 
-Vendored here via the Debian `wamerican` package (2020.12.07), as
+Vendored here via the Debian `wamerican-huge` package (2020.12.07), as
 opendataloader-pdf-core/src/main/resources/org/opendataloader/pdf/utils/english-words.txt.
 
 Copyright: (extracted from the SCOWL README file)
