@@ -15,6 +15,7 @@
  */
 package org.opendataloader.pdf.processors;
 
+import org.opendataloader.pdf.utils.GeneratorUtils;
 import org.verapdf.gf.model.factory.chunks.ChunkParser;
 import org.verapdf.wcag.algorithms.entities.IObject;
 import org.verapdf.wcag.algorithms.entities.content.ImageChunk;
@@ -38,18 +39,108 @@ public class TextProcessor {
     private static final double NEIGHBORS_TEXT_CHUNKS_EPSILON = 0.1;
     private static final double TEXT_MIN_HEIGHT = 1;
 
+    /**
+     * The double-f ligatures observed to reach {@link #replaceUndefinedCharacters} as an
+     * unmapped glyph in practice: a subsetted font (seen from a "Microsoft: Print To PDF"
+     * file) whose {@code /ToUnicode} CMap maps the single-letter-adjacent ligatures "fi"
+     * (U+FB01) and "fl" (U+FB02) correctly but never defines an entry at all - not a wrong
+     * one, an absent one - for the glyph code used to render "ff", "ffi", or "ffl". Each is
+     * one glyph, so one unmapped code becomes exactly one {@link
+     * ChunkParser#REPLACEMENT_CHARACTER_STRING} placeholder standing in for two or three
+     * letters at once ("su" + [glyph] + "cient" -> "sufficient", the "ffi" ligature).
+     * Checked longest first only where it matters for a correct join; see {@link
+     * #resolveLigaturePlaceholder}, which picks by dictionary match rather than order, so
+     * this list is really just the closed, evidence-based set of candidates - narrow on
+     * purpose, the same as {@link GeneratorUtils}' own dictionary-resolved hyphen join: add
+     * a ligature here only once it is actually found dropped this way, not preemptively.
+     */
+    private static final String[] DROPPED_LIGATURE_CANDIDATES = {"ff", "ffi", "ffl"};
+
     public static void replaceUndefinedCharacters(List<IObject> contents, String replacementCharacterString) {
-        if (ChunkParser.REPLACEMENT_CHARACTER_STRING.equals(replacementCharacterString)) {
-            return;
-        }
         for (IObject object : contents) {
             if (object instanceof TextChunk) {
                 TextChunk textChunk = ((TextChunk) object);
-                if (textChunk.getValue().contains(ChunkParser.REPLACEMENT_CHARACTER_STRING)) {
-                    textChunk.setValue(textChunk.getValue().replace(ChunkParser.REPLACEMENT_CHARACTER_STRING, replacementCharacterString));
+                String value = textChunk.getValue();
+                if (!value.contains(ChunkParser.REPLACEMENT_CHARACTER_STRING)) {
+                    continue;
                 }
+                value = resolveLigaturePlaceholders(value);
+                if (!ChunkParser.REPLACEMENT_CHARACTER_STRING.equals(replacementCharacterString)
+                        && value.contains(ChunkParser.REPLACEMENT_CHARACTER_STRING)) {
+                    value = value.replace(ChunkParser.REPLACEMENT_CHARACTER_STRING, replacementCharacterString);
+                }
+                textChunk.setValue(value);
             }
         }
+    }
+
+    /**
+     * Recovers whichever {@link #DROPPED_LIGATURE_CANDIDATES} the context supports, for
+     * every {@link ChunkParser#REPLACEMENT_CHARACTER_STRING} placeholder in {@code value}.
+     * The placeholder itself carries no information about which glyph it replaced, so this
+     * works the same way {@link GeneratorUtils#isEnglishWord} already resolves a
+     * wrap-hyphenated line break: by whether the letters around it spell a real word once a
+     * candidate is substituted in. A placeholder with no letter immediately before it is
+     * never touched - no English word starts with a double-f ligature, and that shape is
+     * also exactly how a genuine, already-correctly-decoded question mark reaches here
+     * (nothing but a real "?" character ever produces the placeholder in the first place,
+     * so the only risk this guards against is an unmapped glyph that starts a chunk). A
+     * missing letter after it is fine - "staff", "stuff", and "off" all end right there.
+     */
+    private static String resolveLigaturePlaceholders(String value) {
+        String placeholder = ChunkParser.REPLACEMENT_CHARACTER_STRING;
+        int index = value.indexOf(placeholder);
+        if (index < 0) {
+            return value;
+        }
+        StringBuilder result = new StringBuilder(value.length() + DROPPED_LIGATURE_CANDIDATES[DROPPED_LIGATURE_CANDIDATES.length - 1].length());
+        int copiedUpTo = 0;
+        while (index >= 0) {
+            result.append(value, copiedUpTo, index);
+            result.append(resolveLigaturePlaceholder(value, index, placeholder.length()));
+            copiedUpTo = index + placeholder.length();
+            index = value.indexOf(placeholder, copiedUpTo);
+        }
+        result.append(value, copiedUpTo, value.length());
+        return result.toString();
+    }
+
+    /**
+     * The replacement for one placeholder at {@code placeholderIndex}: the first of {@link
+     * #DROPPED_LIGATURE_CANDIDATES} that, substituted between the letters immediately
+     * surrounding the placeholder, spells a real English word - or the placeholder itself,
+     * unchanged, if none does.
+     */
+    private static String resolveLigaturePlaceholder(String value, int placeholderIndex, int placeholderLength) {
+        String left = trailingLetters(value, placeholderIndex);
+        if (left.isEmpty()) {
+            return value.substring(placeholderIndex, placeholderIndex + placeholderLength);
+        }
+        String right = leadingLetters(value, placeholderIndex + placeholderLength);
+        for (String candidate : DROPPED_LIGATURE_CANDIDATES) {
+            if (GeneratorUtils.isEnglishWord(left + candidate + right)) {
+                return candidate;
+            }
+        }
+        return value.substring(placeholderIndex, placeholderIndex + placeholderLength);
+    }
+
+    /** The run of letters in {@code text} immediately before index {@code beforeIndex}. */
+    private static String trailingLetters(String text, int beforeIndex) {
+        int start = beforeIndex;
+        while (start > 0 && Character.isLetter(text.charAt(start - 1))) {
+            start--;
+        }
+        return text.substring(start, beforeIndex);
+    }
+
+    /** The run of letters in {@code text} starting at index {@code fromIndex}. */
+    private static String leadingLetters(String text, int fromIndex) {
+        int end = fromIndex;
+        while (end < text.length() && Character.isLetter(text.charAt(end))) {
+            end++;
+        }
+        return text.substring(fromIndex, end);
     }
 
     public static double measureReplacementCharRatio(List<IObject> contents) {
