@@ -78,6 +78,90 @@ public class TextProcessorTest {
         Assertions.assertEquals("Hello $ World", ((TextChunk) contents.get(0)).getValue());
     }
 
+    /**
+     * Regression test: a subsetted font's "ff" ligature dropped from its own /ToUnicode
+     * CMap (seen from a "Microsoft: Print To PDF" file) reaches this point as a single
+     * REPLACEMENT_CHARACTER_STRING placeholder standing in for two letters at once. The
+     * letters around it spell "different" once "ff" is substituted back in, so that
+     * recovery should win over the configured fallback character.
+     */
+    @Test
+    public void testReplaceUndefinedCharactersRecoversDroppedFfLigature() {
+        List<IObject> contents = new ArrayList<>();
+        contents.add(new TextChunk(new BoundingBox(1, 10.0, 10.0, 100.0, 20.0),
+            "The results were di\uFFFDerent this time", 10, 10.0));
+
+        TextProcessor.replaceUndefinedCharacters(contents, "?");
+
+        Assertions.assertEquals("The results were different this time",
+            ((TextChunk) contents.get(0)).getValue());
+    }
+
+    /**
+     * Same defect, the three-letter "ffi" ligature: one dropped glyph code stands in for
+     * "ffi" here ("su" + [glyph] + "cient" -> "sufficient"), not just "ff".
+     */
+    @Test
+    public void testReplaceUndefinedCharactersRecoversDroppedFfiLigature() {
+        List<IObject> contents = new ArrayList<>();
+        contents.add(new TextChunk(new BoundingBox(1, 10.0, 10.0, 100.0, 20.0),
+            "That was su\uFFFDcient for now", 10, 10.0));
+
+        TextProcessor.replaceUndefinedCharacters(contents, "?");
+
+        Assertions.assertEquals("That was sufficient for now",
+            ((TextChunk) contents.get(0)).getValue());
+    }
+
+    /**
+     * The ligature can end a word ("staff") with nothing after the placeholder at all -
+     * unlike the wrap-hyphenated line-join this mirrors, an empty right-hand side must not
+     * block recovery here.
+     */
+    @Test
+    public void testReplaceUndefinedCharactersRecoversWordFinalLigature() {
+        List<IObject> contents = new ArrayList<>();
+        contents.add(new TextChunk(new BoundingBox(1, 10.0, 10.0, 100.0, 20.0),
+            "Please notify the sta\uFFFD", 10, 10.0));
+
+        TextProcessor.replaceUndefinedCharacters(contents, "?");
+
+        Assertions.assertEquals("Please notify the staff",
+            ((TextChunk) contents.get(0)).getValue());
+    }
+
+    /**
+     * When no candidate ligature spells a real word around the placeholder, it must fall
+     * back to the ordinary configured replacement instead of guessing.
+     */
+    @Test
+    public void testReplaceUndefinedCharactersLeavesUnresolvablePlaceholder() {
+        List<IObject> contents = new ArrayList<>();
+        contents.add(new TextChunk(new BoundingBox(1, 10.0, 10.0, 100.0, 20.0),
+            "wo\uFFFDld", 10, 10.0));
+
+        TextProcessor.replaceUndefinedCharacters(contents, "?");
+
+        Assertions.assertEquals("wo?ld", ((TextChunk) contents.get(0)).getValue());
+    }
+
+    /**
+     * A genuine, already-correctly-decoded question mark never reaches this method as the
+     * placeholder in the first place, but a placeholder that legitimately has no letter
+     * before it (chunk starts mid-ligature-recovery-window) must still be left for the
+     * configured fallback rather than forced into a word.
+     */
+    @Test
+    public void testReplaceUndefinedCharactersLeavesPlaceholderWithoutLeadingLetter() {
+        List<IObject> contents = new ArrayList<>();
+        contents.add(new TextChunk(new BoundingBox(1, 10.0, 10.0, 100.0, 20.0),
+            "\uFFFDerent", 10, 10.0));
+
+        TextProcessor.replaceUndefinedCharacters(contents, "?");
+
+        Assertions.assertEquals("?erent", ((TextChunk) contents.get(0)).getValue());
+    }
+
     @Test
     public void testReplaceUndefinedCharactersSkipsNonTextChunks() {
         List<IObject> contents = new ArrayList<>();
