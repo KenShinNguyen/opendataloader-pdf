@@ -58,7 +58,7 @@ def convert(
         content_safety_off: Disable content safety filters. Values: all, hidden-text, off-page, tiny, hidden-ocg
         sanitize: Enable sensitive data sanitization. Replaces emails, phone numbers, IPs, credit cards, and URLs with placeholders
         keep_line_breaks: Preserve original line breaks in extracted text
-        replace_invalid_chars: Replacement character for invalid/unrecognized characters (a glyph whose font has no Unicode mapping - unrecoverable without OCR). Default: the Unicode replacement character (�), so a missing glyph does not read as a fabricated word boundary the way a space would.
+        replace_invalid_chars: Replacement character for invalid/unrecognized characters (a glyph whose font has no Unicode mapping - unrecoverable without OCR). Default: "?", so a missing glyph does not read as a fabricated word boundary the way a space would.
         use_struct_tree: Use PDF structure tree (tagged PDF) for reading order and semantic structure. Output quality depends on tag quality. Takes precedence over --hybrid: when both are set on a tagged PDF, the structure tree is used and the hybrid backend is not called
         table_method: Table detection method. Values: default (border-based), cluster (border + cluster). Default: default
         reading_order: Reading order algorithm. Values: off, xycut. Default: xycut

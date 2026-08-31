@@ -42,13 +42,16 @@ class ConfigTest {
      * common in badly-subsetted fonts used for vector map/chart labels - must not
      * default to a plain space: that fabricates a word boundary that was never there
      * ("TERRITORIES" with two such glyphs would read as "TERR TOR ES", three words
-     * instead of one). The Unicode replacement character makes the gap visible instead.
+     * instead of one). "?" makes the gap visible instead, without the portability
+     * problem U+FFFD itself has: the CLI's --help output must stay printable under
+     * legacy locale encodings like cp949 (verification/ci-verify.py checks this),
+     * and U+FFFD has no representation there.
      */
     @Test
-    void testDefaultReplaceInvalidCharsIsTheUnicodeReplacementCharacterNotASpace() {
+    void testDefaultReplaceInvalidCharsIsAQuestionMarkNotASpace() {
         Config config = new Config();
 
-        assertEquals("�", config.getReplaceInvalidChars());
+        assertEquals("?", config.getReplaceInvalidChars());
     }
 
     @Test

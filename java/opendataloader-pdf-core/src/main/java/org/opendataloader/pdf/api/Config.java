@@ -73,13 +73,16 @@ public class Config {
     private boolean useStructTree = false;
     private boolean useHTMLInMarkdown = false;
     private boolean addImageToMarkdown = false;
-    // U+FFFD (Unicode replacement character) rather than a plain space: a glyph
-    // whose font has no ToUnicode mapping for it (common in badly-subsetted fonts
-    // used for vector map/chart labels) is unrecoverable via text extraction, but
-    // silently substituting a space fabricates a word boundary that was never
-    // there - "TERRITORIES" with two such glyphs reads as "TERR TOR ES", three
-    // words instead of one. "�" makes the gap visible without doing that.
-    private String replaceInvalidChars = "�";
+    // "?" rather than a plain space: a glyph whose font has no ToUnicode mapping
+    // for it (common in badly-subsetted fonts used for vector map/chart labels)
+    // is unrecoverable via text extraction, but silently substituting a space
+    // fabricates a word boundary that was never there - "TERRITORIES" with two
+    // such glyphs reads as "TERR TOR ES", three words instead of one. "?" makes
+    // the gap visible without doing that. Not U+FFFD itself: the CLI's own
+    // --help output must stay safe under legacy locale encodings (verification/
+    // ci-verify.py's cp949 check - Korean Windows' console codepage - among
+    // them), and U+FFFD has no cp949 representation.
+    private String replaceInvalidChars = "?";
     private String outputFolder;
     private String tableMethod = TABLE_METHOD_DEFAULT;
     private String readingOrder = READING_ORDER_XYCUT;
