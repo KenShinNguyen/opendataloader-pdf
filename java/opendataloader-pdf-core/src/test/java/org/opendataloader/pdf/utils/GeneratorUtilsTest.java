@@ -60,20 +60,30 @@ class GeneratorUtilsTest {
     }
 
     /**
-     * A hyphen-minus ending a line is a word split by the wrap - "congru-" + "ence" is
-     * "congruence", not "congru- ence" or "congru ence".
+     * A hyphen-minus ending a line reads identically whether it is a wrap-hyphenated word
+     * ("congru-" + "ence" -> "congruence" would be the old assumption) or a compound
+     * word's own hyphen that happens to land at the wrap point ("well-" + "intentioned").
+     * Auditing every hyphen-minus ending a line across a real book-length sample ("Think
+     * for Yourself") found only the second case - "well-intentioned", "so-called",
+     * "fact-checking", "non-smokers", "meta-analysis", "well-organized", "tuk-tuk",
+     * "Kilowatt-Hour" - with zero genuine wrap-hyphenation, so it is kept rather than
+     * elided: eliding it on the old assumption merged real compound words into one
+     * ("wellintentioned").
      */
     @Test
-    void testGetTextFromLines_elidesHyphenMinusAtLineBreak() {
-        TextLine line1 = new TextLine(new TextChunk("congru-"));
-        TextLine line2 = new TextLine(new TextChunk("ence is important"));
+    void testGetTextFromLines_keepsHyphenMinusAtLineBreak() {
+        TextLine line1 = new TextLine(new TextChunk("well-"));
+        TextLine line2 = new TextLine(new TextChunk("intentioned people"));
 
         String text = GeneratorUtils.getTextFromLines(List.of(line1, line2), OutputType.JSON);
 
-        assertEquals("congruence is important", text);
+        assertEquals("well-intentioned people", text);
     }
 
-    /** A soft hyphen (U+00AD) is elided the same way a hyphen-minus is. */
+    /**
+     * A soft hyphen (U+00AD), unlike a hyphen-minus, exists specifically to mark a
+     * discretionary break, so eliding it at a line break is correct.
+     */
     @Test
     void testGetTextFromLines_elidesSoftHyphenAtLineBreak() {
         TextLine line1 = new TextLine(new TextChunk("congru\u00AD"));
@@ -168,6 +178,45 @@ class GeneratorUtilsTest {
         assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("well-"), "intentioned"));
         assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("congru\u00AD"), "ence"));
         assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("lenses\u2014"), "past"));
+        assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("I"), "\u2019"));
+        assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("can\u2019"), "t"));
+        assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("author"), "'s"));
+        assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("Don'"), "t"));
+    }
+
+    /**
+     * A curly apostrophe (U+2019) - what most PDF text actually uses in a contraction or
+     * possessive - can arrive as its own chunk between the two halves of a word, split off
+     * by however the source document renders the glyph. Chunk-boundary spacing rules alone
+     * would read both boundaries around it as missing word gaps: "I ' m", "can ' t",
+     * "Wright ' s". Real occurrences of exactly this ("I'm", "can't") were found in "Think
+     * for Yourself" with the apostrophe rendered as U+2019, not the ASCII "'" a document
+     * might use instead - both are covered, since either can appear.
+     */
+    @Test
+    void testGetTextFromLines_keepsAnApostropheSplitIntoItsOwnChunkFlushOnBothSides() {
+        TextLine line = new TextLine();
+        line.add(new TextChunk("I"));
+        line.add(new TextChunk("\u2019"));
+        line.add(new TextChunk("m"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line), OutputType.JSON);
+
+        assertEquals("I\u2019m", text);
+    }
+
+    /** Same as above, but the apostrophe stays attached to the chunk before or after it. */
+    @Test
+    void testGetTextFromLines_keepsAnApostropheAttachedToEitherNeighboringChunk() {
+        TextLine cant = new TextLine();
+        cant.add(new TextChunk("can\u2019"));
+        cant.add(new TextChunk("t"));
+        assertEquals("can\u2019t", GeneratorUtils.getTextFromLines(List.of(cant), OutputType.JSON));
+
+        TextLine authors = new TextLine();
+        authors.add(new TextChunk("author"));
+        authors.add(new TextChunk("\u2019s"));
+        assertEquals("author\u2019s", GeneratorUtils.getTextFromLines(List.of(authors), OutputType.JSON));
     }
 
     /**
