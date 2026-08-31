@@ -61,8 +61,8 @@
       "shortName": null,
       "type": "string",
       "required": false,
-      "default": " ",
-      "description": "Replacement character for invalid/unrecognized characters. Default: space"
+      "default": "?",
+      "description": "Replacement character for invalid/unrecognized characters (a glyph whose font has no Unicode mapping - unrecoverable without OCR). Default: \"?\", so a missing glyph does not read as a fabricated word boundary the way a space would."
     },
     {
       "name": "use-struct-tree",

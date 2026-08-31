@@ -19,7 +19,7 @@ export interface ConvertOptions {
   sanitize?: boolean;
   /** Preserve original line breaks in extracted text */
   keepLineBreaks?: boolean;
-  /** Replacement character for invalid/unrecognized characters. Default: space */
+  /** Replacement character for invalid/unrecognized characters (a glyph whose font has no Unicode mapping - unrecoverable without OCR). Default: "?", so a missing glyph does not read as a fabricated word boundary the way a space would. */
   replaceInvalidChars?: string;
   /** Use PDF structure tree (tagged PDF) for reading order and semantic structure. Output quality depends on tag quality. Takes precedence over --hybrid: when both are set on a tagged PDF, the structure tree is used and the hybrid backend is not called */
   useStructTree?: boolean;

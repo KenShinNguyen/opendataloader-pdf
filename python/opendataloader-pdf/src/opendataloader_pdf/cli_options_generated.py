@@ -78,8 +78,8 @@ CLI_OPTIONS: List[Dict[str, Any]] = [
         "short_name": None,
         "type": "string",
         "required": False,
-        "default": " ",
-        "description": "Replacement character for invalid/unrecognized characters. Default: space",
+        "default": "?",
+        "description": "Replacement character for invalid/unrecognized characters (a glyph whose font has no Unicode mapping - unrecoverable without OCR). Default: \"?\", so a missing glyph does not read as a fabricated word boundary the way a space would.",
     },
     {
         "name": "use-struct-tree",

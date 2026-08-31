@@ -37,6 +37,23 @@ class ConfigTest {
         assertEquals(Config.READING_ORDER_XYCUT, config.getReadingOrder());
     }
 
+    /**
+     * A glyph whose font has no ToUnicode mapping - unrecoverable via text extraction,
+     * common in badly-subsetted fonts used for vector map/chart labels - must not
+     * default to a plain space: that fabricates a word boundary that was never there
+     * ("TERRITORIES" with two such glyphs would read as "TERR TOR ES", three words
+     * instead of one). "?" makes the gap visible instead, without the portability
+     * problem U+FFFD itself has: the CLI's --help output must stay printable under
+     * legacy locale encodings like cp949 (verification/ci-verify.py checks this),
+     * and U+FFFD has no representation there.
+     */
+    @Test
+    void testDefaultReplaceInvalidCharsIsAQuestionMarkNotASpace() {
+        Config config = new Config();
+
+        assertEquals("?", config.getReplaceInvalidChars());
+    }
+
     @Test
     void testSetImageOutputAffectsIsEmbedImages() {
         Config config = new Config();
