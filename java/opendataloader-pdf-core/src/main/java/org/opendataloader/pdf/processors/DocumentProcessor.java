@@ -405,8 +405,17 @@ public class DocumentProcessor {
                     List<IObject> pageContents = contents.get(pageNumber);
                     pageContents = ParagraphProcessor.processParagraphs(pageContents);
                     if (structured) {
+                        // Pull margin callouts/leader-line markers out before list and
+                        // heading detection get a chance to absorb them - both key off
+                        // text shape alone and would otherwise happily fold "1st point
+                        // of refutation..." into a body list, or turn a bare connector
+                        // digit into an orphan one-item list. See MarginAnnotationProcessor.
+                        MarginAnnotationProcessor.Extraction extraction =
+                                MarginAnnotationProcessor.extractMarginAnnotations(pageContents);
+                        pageContents = extraction.remaining;
                         pageContents = ListProcessor.processListsFromTextNodes(pageContents);
                         HeadingProcessor.processHeadings(pageContents, false);
+                        pageContents.addAll(extraction.annotations);
                     }
                     contents.set(pageNumber, pageContents);
                 })

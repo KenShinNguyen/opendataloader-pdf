@@ -312,6 +312,9 @@ public class PDFWriter {
         if (semanticType == SemanticType.PART) {
             return new float[]{0.9f, 0.9f, 0.9f};
         }
+        if (semanticType == SemanticType.ANNOT) {
+            return new float[]{1, 0.5f, 0};
+        }
         return null;
     }
 

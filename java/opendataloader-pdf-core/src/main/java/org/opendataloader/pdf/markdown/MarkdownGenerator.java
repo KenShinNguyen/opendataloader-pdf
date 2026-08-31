@@ -19,6 +19,7 @@ import org.opendataloader.pdf.api.Config;
 import org.opendataloader.pdf.containers.StaticLayoutContainers;
 import org.opendataloader.pdf.entities.SemanticFormula;
 import org.opendataloader.pdf.entities.EnrichedImageChunk;
+import org.opendataloader.pdf.entities.MarginAnnotation;
 import org.opendataloader.pdf.entities.SemanticPicture;
 import org.opendataloader.pdf.utils.Base64ImageUtils;
 import org.opendataloader.pdf.utils.GeneratorUtils;
@@ -175,6 +176,8 @@ public class MarkdownGenerator implements Closeable {
             writeFormula((SemanticFormula) object);
         } else if (object instanceof SemanticHeading) {
             writeHeading((SemanticHeading) object);
+        } else if (object instanceof MarginAnnotation) {
+            writeAnnotation((MarginAnnotation) object);
         } else if (object instanceof SemanticParagraph) {
             writeParagraph((SemanticParagraph) object);
         } else if (object instanceof SemanticTextNode) {
@@ -619,6 +622,22 @@ public class MarkdownGenerator implements Closeable {
 
     protected void writeParagraph(SemanticParagraph textNode) throws IOException {
         writeSemanticTextNode(textNode);
+    }
+
+    /**
+     * A margin annotation (a textbook's "1st point of refutation..." callout, or the
+     * leader-line digit connecting one to its highlighted body passage) is rendered as
+     * a blockquote instead of running prose, so it reads as the aside it is rather than
+     * splicing into the middle of a paragraph or list - the defect
+     * {@link org.opendataloader.pdf.processors.MarginAnnotationProcessor} exists to fix.
+     * Its content is never more than a short phrase in practice; any embedded line break
+     * is flattened to a space rather than risk breaking the blockquote across lines.
+     */
+    protected void writeAnnotation(MarginAnnotation annotation) throws IOException {
+        markdownWriter.write(MarkdownSyntax.BLOCKQUOTE);
+        String value = GeneratorUtils.getTextFromTextNode(annotation, OutputType.MD);
+        value = value.replace(MarkdownSyntax.LINE_BREAK, MarkdownSyntax.SPACE);
+        markdownWriter.write(getCorrectMarkdownString(value));
     }
 
     protected void writeHeading(SemanticHeading heading) throws IOException {
