@@ -32,9 +32,13 @@ public class MarginAnnotationProcessorTest {
 
     private static SemanticParagraph paragraphAt(String text, double left, double bottom, double right, double top) {
         SemanticParagraph paragraph = new SemanticParagraph();
-        paragraph.add(new TextLine(new TextChunk(new BoundingBox(0, left, bottom, right, top),
-            text, "Font1", 9.0, 400, 0, 9.0, new double[]{0.0}, null, 0)));
+        paragraph.add(textLineAt(text, left, bottom, right, top));
         return paragraph;
+    }
+
+    private static TextLine textLineAt(String text, double left, double bottom, double right, double top) {
+        return new TextLine(new TextChunk(new BoundingBox(0, left, bottom, right, top),
+            text, "Font1", 9.0, 400, 0, 9.0, new double[]{0.0}, null, 0));
     }
 
     /**
@@ -169,6 +173,105 @@ public class MarginAnnotationProcessorTest {
         MarginAnnotationProcessor.Extraction extraction = MarginAnnotationProcessor.extractMarginAnnotations(contents);
 
         assertThat(extraction.remaining).containsExactly(shortLine);
+        assertThat(extraction.annotations).isEmpty();
+    }
+
+    /**
+     * Mirrors real geometry from page 10 of "Read, Reason, Write": a column of bare
+     * footnote/endnote reference-marker digits ("1".."5") sitting just past the
+     * body column's right edge. {@code ListProcessor.processLists} - a cross-page
+     * pass over raw {@link TextLine}s that runs before paragraphs even exist - reads
+     * this exact shape (a run of increasing digits) as a numbered list and groups
+     * it, leaving every item's own content empty since there is no body text for a
+     * bare reference marker to hold; the fake list then surfaces as a run of empty
+     * "1." / "2." / ... items spliced into the middle of a body sentence. Catching
+     * these as {@link TextLine}s, before that pass ever runs, is what
+     * {@link MarginAnnotationProcessor#extractMarginAnnotationsFromTextLines} is for.
+     */
+    @Test
+    public void bareFootnoteMarkerColumnIsExtractedFromTextLinesBeforeListDetection() {
+        TextLine body = textLineAt("H.R. 51 has both the facts and the Constitution on its side.",
+            84.003, 85.669, 483.314, 115.572);
+        TextLine marker1 = textLineAt("1", 489.601, 444.287, 492.901, 455.906);
+        TextLine marker2 = textLineAt("2", 489.601, 403.009, 494.419, 414.628);
+        TextLine marker3 = textLineAt("3", 489.601, 361.723, 494.314, 373.341);
+        TextLine marker4 = textLineAt("4", 489.601, 196.49, 494.395, 208.109);
+        TextLine marker5 = textLineAt("5", 489.601, 100.125, 494.483, 111.743);
+        List<IObject> contents = new ArrayList<>(List.of(body, marker1, marker2, marker3, marker4, marker5));
+
+        MarginAnnotationProcessor.Extraction extraction =
+                MarginAnnotationProcessor.extractMarginAnnotationsFromTextLines(contents);
+
+        assertThat(extraction.remaining).containsExactly(body);
+        assertThat(extraction.annotations).hasSize(5);
+    }
+
+    /**
+     * A genuine multi-line margin callout ("Introduction connects ambivalence in
+     * American character to conflict over gun control.", real 3-line geometry from
+     * page 37, body column matching the left-margin-annotation page style used
+     * elsewhere in this file) is still several separate {@link TextLine}s at this
+     * pipeline stage - paragraph grouping hasn't happened yet. Classifying each
+     * line independently would fragment one real annotation into three one-line
+     * ones; {@link MarginAnnotationProcessor#extractMarginAnnotationsFromTextLines}
+     * must instead produce exactly one {@link MarginAnnotation} holding all three.
+     */
+    @Test
+    public void multiLineCalloutStaysOneAnnotationNotOnePerLine() {
+        TextLine body = textLineAt("Body text continues across the full column width here.",
+            128.758, 80.839, 490.987, 104.44);
+        TextLine calloutLine1 = textLineAt("Introduction connects ambivalence in",
+            50.162, 265.828, 106.13, 284.828);
+        TextLine calloutLine2 = textLineAt("American character to conflict over",
+            50.162, 245.828, 104.9, 264.828);
+        TextLine calloutLine3 = textLineAt("gun control.",
+            50.162, 227.397, 88.4, 245.828);
+        List<IObject> contents = new ArrayList<>(List.of(body, calloutLine1, calloutLine2, calloutLine3));
+
+        MarginAnnotationProcessor.Extraction extraction =
+                MarginAnnotationProcessor.extractMarginAnnotationsFromTextLines(contents);
+
+        assertThat(extraction.remaining).containsExactly(body);
+        assertThat(extraction.annotations).hasSize(1);
+    }
+
+    /**
+     * The other side of the same coin as the multi-line test above: two distinct
+     * one-line callouts stacked in the same margin column (real page 7 geometry,
+     * ~80pt apart - far more than one line's worth of gap) must stay two separate
+     * {@link MarginAnnotation}s, not get merged into one because they share a
+     * column the way a real multi-line callout's own lines do.
+     */
+    @Test
+    public void distinctSingleLineCalloutsInTheSameColumnAreNotMerged() {
+        TextLine body = textLineAt("Body text continues across the full column width here.",
+            128.758, 80.839, 490.987, 104.44);
+        TextLine callout1 = textLineAt("Attention-getting introduction.", 50.162, 278.387, 104.155, 298.983);
+        TextLine callout2 = textLineAt("Clever extended metaphor.", 50.162, 203.751, 101.505, 224.463);
+        List<IObject> contents = new ArrayList<>(List.of(body, callout1, callout2));
+
+        MarginAnnotationProcessor.Extraction extraction =
+                MarginAnnotationProcessor.extractMarginAnnotationsFromTextLines(contents);
+
+        assertThat(extraction.remaining).containsExactly(body);
+        assertThat(extraction.annotations).hasSize(2);
+    }
+
+    /**
+     * A genuine two-column layout at the TextLine level must be just as safe as it
+     * is at the paragraph level - both columns are far wider than any real margin
+     * marker, so neither line qualifies as a narrow-enough candidate.
+     */
+    @Test
+    public void twoColumnBodyLayoutIsUntouchedAtTextLineLevel() {
+        TextLine leftColumn = textLineAt("Left column body text spanning a wide measure.", 72.0, 680.0, 300.0, 700.0);
+        TextLine rightColumn = textLineAt("Right column body text spanning a wide measure.", 320.0, 680.0, 550.0, 700.0);
+        List<IObject> contents = new ArrayList<>(List.of(leftColumn, rightColumn));
+
+        MarginAnnotationProcessor.Extraction extraction =
+                MarginAnnotationProcessor.extractMarginAnnotationsFromTextLines(contents);
+
+        assertThat(extraction.remaining).containsExactly(leftColumn, rightColumn);
         assertThat(extraction.annotations).isEmpty();
     }
 }

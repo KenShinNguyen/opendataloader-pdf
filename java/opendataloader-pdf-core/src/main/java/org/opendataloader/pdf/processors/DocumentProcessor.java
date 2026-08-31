@@ -382,6 +382,22 @@ public class DocumentProcessor {
             if (structured) {
                 // Cross-page operations (must be sequential)
                 HeaderFooterProcessor.processHeadersAndFooters(contents, false);
+                // Pull margin content out of raw TextLines before ListProcessor.processLists
+                // gets to them below - it groups list-shaped text (including a column of
+                // bare footnote/endnote reference markers with no body text of their own)
+                // before paragraphs even exist, which is too early for the paragraph-level
+                // MarginAnnotationProcessor pass in Loop 3 to help. Runs after header/footer
+                // detection above so a genuine running-head page number gets that pass's more
+                // reliable repeats-across-pages check first. See MarginAnnotationProcessor.
+                for (int pageNumber = 0; pageNumber < totalPages; pageNumber++) {
+                    if (shouldProcessPage(pageNumber, pagesToProcess)) {
+                        MarginAnnotationProcessor.Extraction extraction =
+                                MarginAnnotationProcessor.extractMarginAnnotationsFromTextLines(contents.get(pageNumber));
+                        List<IObject> pageContents = extraction.remaining;
+                        pageContents.addAll(extraction.annotations);
+                        contents.set(pageNumber, pageContents);
+                    }
+                }
                 // TOC detection is temporarily disabled. It is not yet complete:
                 //  - the heuristic has heavy false positives (any line ending in a
                 //    bare number is treated as a TOC item), so it can restructure
