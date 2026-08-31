@@ -168,6 +168,7 @@ The following components include software developed at The Apache Software Found
 - `python-typing-extensions` (4.15.0): Copyright (c) 1991-1995 Stichting Mathematisch Centrum Amsterdam
 - `python3-charset-normalizer` (3.4.1): Copyright (c) 2021-2025 Ahmed TAHRI
 - `PyYAML` (6.0.2): Copyright (c) 2006-2021 Kirill Simonov, Ingy döt Net
+- `SCOWL (Spell Checker Oriented Word Lists)` (2020.12.07, via Debian `wamerican`): Copyright 2000-2011 by Kevin Atkinson, with contributions credited in SCOWL's own README (including the Moby Words II lexicon, placed in the public domain by Grady Ward). Used here as a plain wordlist (`opendataloader-pdf-core/src/main/resources/org/opendataloader/pdf/utils/english-words.txt`) to disambiguate a hyphen-minus ending a line of extracted PDF text.
 - `Qix-/color-convert` (2.0.1): Copyright (c) 2011-2016 Heather Arthur, Josh Junon
 - `readdirp` (4.1.2): Copyright (c) 2012-2019 Thorsten Lorenz, Paul Miller
 - `requests-toolbelt` (1.0.0): Copyright (c) 2014 Ian Cordasco, Cory Benfield
