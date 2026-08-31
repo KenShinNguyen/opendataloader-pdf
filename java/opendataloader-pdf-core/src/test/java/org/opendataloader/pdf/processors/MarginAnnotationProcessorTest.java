@@ -16,12 +16,14 @@
 package org.opendataloader.pdf.processors;
 
 import org.opendataloader.pdf.entities.MarginAnnotation;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.verapdf.wcag.algorithms.entities.IObject;
 import org.verapdf.wcag.algorithms.entities.SemanticParagraph;
 import org.verapdf.wcag.algorithms.entities.content.TextChunk;
 import org.verapdf.wcag.algorithms.entities.content.TextLine;
 import org.verapdf.wcag.algorithms.entities.geometry.BoundingBox;
+import org.verapdf.wcag.algorithms.semanticalgorithms.containers.StaticContainers;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +31,20 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class MarginAnnotationProcessorTest {
+
+    /**
+     * {@code SemanticTextNode.getValue()} - now called on every candidate to decide
+     * whether it is a bare number worth dropping - joins a multi-line node's lines
+     * through {@code StaticContainers.isKeepLineBreaks()}. In real processing this is
+     * always set by {@code StaticContainers.updateContainers} before the pipeline
+     * runs; here, nothing else does that, so tests that group several lines into one
+     * candidate (e.g. {@code multiLineCalloutStaysOneAnnotationNotOnePerLine}) would
+     * otherwise NPE on the unset ThreadLocal.
+     */
+    @BeforeEach
+    public void setKeepLineBreaks() {
+        StaticContainers.setKeepLineBreaks(false);
+    }
 
     private static SemanticParagraph paragraphAt(String text, double left, double bottom, double right, double top) {
         SemanticParagraph paragraph = new SemanticParagraph();
@@ -87,15 +103,58 @@ public class MarginAnnotationProcessorTest {
     /**
      * The bare leader-line digit ("1") connecting a highlighted body passage to its
      * margin callout is only ~3.3pt wide - real output has 17 of these across one
-     * document, each previously surfacing as an orphan single-character list item
-     * with no content of its own. It must be extracted just like the callout text is.
+     * document. Pulling it out of the body flow is only half the job: on its own it
+     * has no content at all (the digit-to-citation link it once carried lives outside
+     * the reading-order text this tool extracts), so it must be dropped outright, not
+     * kept as a one-character "annotation" that would surface as clutter in both JSON
+     * and Markdown ("> 1").
      */
     @Test
-    public void bareLeaderLineDigitIsExtracted() {
+    public void bareLeaderLineDigitIsDropped() {
         SemanticParagraph body = paragraphAt("Body text continues across the full column width here.",
             84.003, 72.111, 483.372, 129.497);
         SemanticParagraph marker = paragraphAt("1", 489.601, 114.166, 492.901, 125.784);
         List<IObject> contents = new ArrayList<>(List.of(body, marker));
+
+        MarginAnnotationProcessor.Extraction extraction = MarginAnnotationProcessor.extractMarginAnnotations(contents);
+
+        assertThat(extraction.remaining).containsExactly(body);
+        assertThat(extraction.annotations).isEmpty();
+    }
+
+    /**
+     * A stray running-head page number ("175") that escapes HeaderFooterProcessor's
+     * own repeats-across-pages detection lands in the same margin zone a real callout
+     * would. It is just as content-free as a bare footnote marker, so it must be
+     * dropped the same way - not mislabelled "annotation" and surfaced as "> 175".
+     */
+    @Test
+    public void bareRunningPageNumberIsDroppedNotKeptAsAnnotation() {
+        SemanticParagraph body = paragraphAt("Body text continues across the full column width here.",
+            84.003, 72.111, 483.372, 129.497);
+        SemanticParagraph folio = paragraphAt("175", 500.995, 107.27, 520.0, 118.0);
+        List<IObject> contents = new ArrayList<>(List.of(body, folio));
+
+        MarginAnnotationProcessor.Extraction extraction = MarginAnnotationProcessor.extractMarginAnnotations(contents);
+
+        assertThat(extraction.remaining).containsExactly(body);
+        assertThat(extraction.annotations).isEmpty();
+    }
+
+    /**
+     * The digit-only check is deliberately narrower than "starts with a digit": a real
+     * callout can legitimately begin with one ("2 1st point of refutation:
+     * Globalization has been mischaracterized.", real page-27 text). Because it also
+     * contains letters, it is not a bare number and must still come out as a normal,
+     * visible annotation.
+     */
+    @Test
+    public void paragraphAnnotationThatStartsWithADigitIsStillKept() {
+        SemanticParagraph body = paragraphAt("Body text continues across the full column width here.",
+            84.003, 72.111, 483.372, 129.497);
+        SemanticParagraph callout = paragraphAt("2 1st point of refutation: Globalization has been mischaracterized.",
+            500.995, 107.27, 554.988, 127.867);
+        List<IObject> contents = new ArrayList<>(List.of(body, callout));
 
         MarginAnnotationProcessor.Extraction extraction = MarginAnnotationProcessor.extractMarginAnnotations(contents);
 
@@ -187,9 +246,12 @@ public class MarginAnnotationProcessorTest {
      * "1." / "2." / ... items spliced into the middle of a body sentence. Catching
      * these as {@link TextLine}s, before that pass ever runs, is what
      * {@link MarginAnnotationProcessor#extractMarginAnnotationsFromTextLines} is for.
+     * Pulling them out of the flow is only half the fix: each marker is still just a
+     * bare digit with no content of its own once out, so all five must be dropped
+     * outright rather than surface as five separate "annotation" nodes.
      */
     @Test
-    public void bareFootnoteMarkerColumnIsExtractedFromTextLinesBeforeListDetection() {
+    public void bareFootnoteMarkerColumnIsDroppedFromTextLinesBeforeListDetection() {
         TextLine body = textLineAt("H.R. 51 has both the facts and the Constitution on its side.",
             84.003, 85.669, 483.314, 115.572);
         TextLine marker1 = textLineAt("1", 489.601, 444.287, 492.901, 455.906);
@@ -203,7 +265,60 @@ public class MarginAnnotationProcessorTest {
                 MarginAnnotationProcessor.extractMarginAnnotationsFromTextLines(contents);
 
         assertThat(extraction.remaining).containsExactly(body);
-        assertThat(extraction.annotations).hasSize(5);
+        assertThat(extraction.annotations).isEmpty();
+    }
+
+    /**
+     * Not every footnote-marker column is spaced like page 10's - some sit close
+     * enough together (real output: "Nicholas Haslam" essay) that the plain
+     * vertical-gap check above would read them as one multi-line callout and
+     * merge them into a single nonsensical annotation ("1 2" instead of two
+     * separate ones) - which, unlike a lone digit, is no longer purely numeric (the
+     * merge joins values with a space) and so would slip past the bare-number drop
+     * below and surface as a visible "> 1 2" annotation. A bare digit is always its
+     * own standalone marker no matter how close its neighbor sits, so both must stay
+     * separate one-line candidates and, being bare digits individually, both end up
+     * dropped rather than merged into one bogus surviving annotation.
+     */
+    @Test
+    public void tightlySpacedBareMarkersAreNotMergedIntoOne() {
+        TextLine body = textLineAt("PREREADING QUESTIONS How do you use the word trauma?",
+            84.003, 85.669, 483.314, 104.44);
+        TextLine marker1 = textLineAt("1", 489.601, 444.287, 492.901, 455.906);
+        TextLine marker2 = textLineAt("2", 489.601, 432.287, 492.901, 443.906);
+        List<IObject> contents = new ArrayList<>(List.of(body, marker1, marker2));
+
+        MarginAnnotationProcessor.Extraction extraction =
+                MarginAnnotationProcessor.extractMarginAnnotationsFromTextLines(contents);
+
+        assertThat(extraction.remaining).containsExactly(body);
+        assertThat(extraction.annotations).isEmpty();
+    }
+
+    /**
+     * The same guard has to hold when the tight neighbor isn't another bare
+     * marker but a real callout's own text: a leader-line connector digit sitting
+     * just above "1st point of refutation..." must not fuse onto it ("2 1st
+     * point of refutation..."), losing the digit's own identity as a marker - and,
+     * once kept separate, the bare digit is dropped as content-free while the real
+     * callout text survives untouched as the sole remaining annotation.
+     */
+    @Test
+    public void bareMarkerDoesNotFuseOntoAnAdjacentCalloutsText() {
+        TextLine body = textLineAt("Body text continues across the full column width here.",
+            128.758, 80.839, 490.987, 104.44);
+        TextLine marker = textLineAt("2", 50.162, 432.287, 53.462, 443.906);
+        TextLine calloutText = textLineAt("1st point of refutation: Globalization has been mischaracterized.",
+            50.162, 420.287, 106.066, 431.906);
+        List<IObject> contents = new ArrayList<>(List.of(body, marker, calloutText));
+
+        MarginAnnotationProcessor.Extraction extraction =
+                MarginAnnotationProcessor.extractMarginAnnotationsFromTextLines(contents);
+
+        assertThat(extraction.remaining).containsExactly(body);
+        assertThat(extraction.annotations).hasSize(1);
+        MarginAnnotation annotation = (MarginAnnotation) extraction.annotations.get(0);
+        assertThat(annotation.getValue()).isEqualTo("1st point of refutation: Globalization has been mischaracterized.");
     }
 
     /**

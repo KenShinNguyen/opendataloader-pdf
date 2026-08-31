@@ -56,10 +56,11 @@ import java.util.List;
  * would be ({@link #MAX_ANNOTATION_HEIGHT}). A rotated image credit printed
  * sideways along an image edge is excluded separately by its tall/narrow
  * aspect ratio. A false positive here is a stray page-edge scrap (a folio
- * HeaderFooterProcessor's own repeat-detection missed, say) getting labelled
- * "annotation" instead of "paragraph" - still pulled out of the body flow
- * either way, and never anything from the body column itself, but the label
- * itself is not guaranteed accurate.
+ * HeaderFooterProcessor's own repeat-detection missed, say) getting pulled out
+ * of the body flow the way a real callout is - and, like a bare footnote/endnote
+ * marker, dropped outright rather than kept, since a lone page number is just as
+ * meaningless a fragment on its own (see {@link #isBareNumber}). Either way,
+ * nothing from the body column itself is ever touched.
  */
 public class MarginAnnotationProcessor {
 
@@ -138,9 +139,14 @@ public class MarginAnnotationProcessor {
                     ? classify(content, bodyLeft, bodyRight) : null;
             if (position == null) {
                 remaining.add(content);
-            } else {
+            } else if (!isBareNumber(((SemanticParagraph) content).getValue())) {
                 annotations.add(new MarginAnnotation((SemanticParagraph) content, position));
             }
+            // else: a bare number carries no content of its own (see the class Javadoc
+            // and isBareNumber) - dropped outright, not put back in remaining, since
+            // that would only hand it straight back to ListProcessor/HeadingProcessor
+            // to mis-group as a list item or heading the way it did before this class
+            // existed.
         }
         return new Extraction(remaining, annotations);
     }
@@ -195,10 +201,14 @@ public class MarginAnnotationProcessor {
 
         List<IObject> annotations = new ArrayList<>();
         for (SemanticParagraph paragraph : groupIntoParagraphs(leftLines)) {
-            annotations.add(new MarginAnnotation(paragraph, MarginAnnotation.Position.LEFT));
+            if (!isBareNumber(paragraph.getValue())) {
+                annotations.add(new MarginAnnotation(paragraph, MarginAnnotation.Position.LEFT));
+            }
         }
         for (SemanticParagraph paragraph : groupIntoParagraphs(rightLines)) {
-            annotations.add(new MarginAnnotation(paragraph, MarginAnnotation.Position.RIGHT));
+            if (!isBareNumber(paragraph.getValue())) {
+                annotations.add(new MarginAnnotation(paragraph, MarginAnnotation.Position.RIGHT));
+            }
         }
         return new Extraction(remaining, annotations);
     }
@@ -222,6 +232,7 @@ public class MarginAnnotationProcessor {
         TextLine previous = null;
         for (TextLine line : sorted) {
             boolean sameParagraphAsPrevious = previous != null
+                    && !isBareNumber(previous.getValue()) && !isBareNumber(line.getValue())
                     && previous.getBottomY() - line.getTopY() <= LINE_GROUPING_MAX_GAP_RATIO * previous.getHeight();
             if (!sameParagraphAsPrevious) {
                 current = new SemanticParagraph();
@@ -231,6 +242,32 @@ public class MarginAnnotationProcessor {
             previous = line;
         }
         return paragraphs;
+    }
+
+    /**
+     * A bare footnote/endnote reference marker, or a leader-line connector digit,
+     * is always its own standalone unit - never a fragment of a longer text run,
+     * even when several sit close enough together to look like consecutive lines
+     * of one callout. Without this guard, a tightly-stacked column of markers
+     * (unlike page 51's, spaced dozens of points apart at each paragraph's own
+     * start) merges into one nonsensical annotation ("1 2", "36 37 38 39"), or a
+     * connector digit fuses onto an unrelated neighboring callout's own text
+     * ("2 1st point of refutation: ..."). A real multi-line callout's lines are
+     * prose fragments, never bare digits, so this never blocks a legitimate merge.
+     *
+     * <p>Reused after grouping (see both {@code extractMarginAnnotations*} methods
+     * above) to decide whether a finished candidate is worth keeping at all: a value
+     * that is nothing but digits - a connector/reference marker, or a stray running-head
+     * page number that escaped {@link HeaderFooterProcessor}'s own repeats-across-pages
+     * detection - has no meaning without the citation or highlight it once pointed to,
+     * which this tool has no way to recover; surfacing it as a one-word "annotation"
+     * (JSON node or a "> 1" line in Markdown) is clutter, not information, so it is
+     * dropped rather than kept. This is deliberately narrower than "starts with a
+     * digit": a real callout like "2 1st point of refutation: Globalization has been
+     * mischaracterized." contains letters too and is left untouched.
+     */
+    private static boolean isBareNumber(String value) {
+        return value != null && !value.isEmpty() && value.chars().allMatch(Character::isDigit);
     }
 
     private static List<IObject> bodyCandidates(List<IObject> pageContents, Class<? extends IObject> candidateType) {
