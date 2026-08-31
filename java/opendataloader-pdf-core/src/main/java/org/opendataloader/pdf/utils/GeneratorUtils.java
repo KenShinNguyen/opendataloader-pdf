@@ -19,6 +19,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Assembles the text of a semantic node once, in a single canonical join, so JSON,
@@ -38,6 +40,8 @@ import java.util.Set;
  * {@link OutputType#JSON} included, which is what makes this the one canonical builder.
  */
 public class GeneratorUtils {
+
+    private static final Logger LOGGER = Logger.getLogger(GeneratorUtils.class.getCanonicalName());
 
     /**
      * A hyphen-minus ending a line reads identically whether it is a word split by the
@@ -66,7 +70,13 @@ public class GeneratorUtils {
      * hyphen-minus ending a line is a wrap-hyphenated word. Loaded once per process; a
      * missing or unreadable resource degrades to an empty set rather than failing
      * document processing, so a hyphen-minus is then always kept, same as before this
-     * dictionary check existed.
+     * dictionary check existed - but only ever as a last resort. A resource this class
+     * ships is not supposed to go missing, so that fallback firing at all is logged at
+     * WARNING: it is silent everywhere else on purpose (a wrong hyphen decision reads as
+     * ordinary text, never an exception), and an empty wordlist quietly reproducing the
+     * pre-dictionary "always keep" behavior for an entire build is exactly the failure
+     * mode most likely to go unnoticed without it - src/main/resources not being on the
+     * build's resource path at all, for one, is what actually happened here once.
      */
     private static final class EnglishWords {
         private static final Set<String> WORDS = load();
@@ -77,6 +87,9 @@ public class GeneratorUtils {
         private static Set<String> load() {
             try (InputStream stream = GeneratorUtils.class.getResourceAsStream(ENGLISH_WORDS_RESOURCE)) {
                 if (stream == null) {
+                    LOGGER.warning(() -> "Wordlist resource " + ENGLISH_WORDS_RESOURCE + " not found; "
+                            + "every hyphen-minus ending a line will be kept rather than "
+                            + "resolved by dictionary lookup.");
                     return Set.of();
                 }
                 Set<String> words = new HashSet<>(90000);
@@ -91,6 +104,9 @@ public class GeneratorUtils {
                 }
                 return words;
             } catch (IOException | UncheckedIOException exception) {
+                LOGGER.log(Level.WARNING, exception, () -> "Failed to read wordlist resource "
+                        + ENGLISH_WORDS_RESOURCE + "; every hyphen-minus ending a line will be "
+                        + "kept rather than resolved by dictionary lookup.");
                 return Set.of();
             }
         }
