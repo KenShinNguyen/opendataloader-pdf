@@ -214,6 +214,10 @@ class GeneratorUtilsTest {
         assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("can\u2019"), "t"));
         assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("author"), "'s"));
         assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("Don'"), "t"));
+        assertEquals(false, GeneratorUtils.needsChunkSeparator(new StringBuilder("laissez-faire"), "\u2014to"));
+        // "consumers'" is a complete word (plural possessive) - the next chunk starts a
+        // new one, so unlike the contraction-suffix cases above, a separator IS needed.
+        assertEquals(true, GeneratorUtils.needsChunkSeparator(new StringBuilder("consumers\u2019"), "personal"));
     }
 
     /**
@@ -249,6 +253,124 @@ class GeneratorUtilsTest {
         authors.add(new TextChunk("author"));
         authors.add(new TextChunk("\u2019s"));
         assertEquals("author\u2019s", GeneratorUtils.getTextFromLines(List.of(authors), OutputType.JSON));
+    }
+
+    /**
+     * A plural possessive's apostrophe ending a chunk ("consumers'") is the end of a
+     * complete word, not a mid-word contraction split ("can" + "'t") - the next chunk
+     * starts an unrelated word and needs its own space, unlike "can't" or "I'm". Found
+     * broken as "consumers'personal" in real output from "Read, Reason, Write", where the
+     * blanket apostrophe suppression this session first shipped swallowed a real space.
+     */
+    @Test
+    void testGetTextFromLines_keepsASpaceAfterAPossessiveApostropheEndingAWholeWord() {
+        TextLine line = new TextLine();
+        line.add(new TextChunk("consumers’"));
+        line.add(new TextChunk("personal information"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line), OutputType.JSON);
+
+        assertEquals("consumers’ personal information", text);
+    }
+
+    /** Same bug, the book's other real occurrence: a possessive of a word already ending in "s". */
+    @Test
+    void testGetTextFromLines_keepsASpaceAfterAPossessiveApostropheEndingAWholeWord_unitedStates() {
+        TextLine line = new TextLine();
+        line.add(new TextChunk("the United States’"));
+        line.add(new TextChunk("incorrigible optimism"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line), OutputType.JSON);
+
+        assertEquals("the United States’ incorrigible optimism", text);
+    }
+
+    /**
+     * An em dash starting the next chunk needs no separator either, the mirror image of
+     * {@link #testGetTextFromLines_keepsEmDashAtLineBreak}: "laissez-faire" + "—to let"
+     * must read "laissez-faire—to let", not "laissez-faire —to let". Found broken this way
+     * in real output - only a trailing em dash on the accumulated side was ever checked,
+     * never a leading one on the chunk about to be appended.
+     */
+    @Test
+    void testGetTextFromLines_keepsNoSpaceBeforeAnEmDashStartingTheNextChunk() {
+        TextLine line = new TextLine();
+        line.add(new TextChunk("laissez-faire"));
+        line.add(new TextChunk("—to let the wealthy do as they please"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line), OutputType.JSON);
+
+        assertEquals("laissez-faire—to let the wealthy do as they please", text);
+    }
+
+    /** Same em-dash-starts-the-next-segment case, but at a real line break instead of a chunk boundary. */
+    @Test
+    void testGetTextFromLines_keepsNoSpaceBeforeAnEmDashStartingTheNextLine() {
+        TextLine line1 = new TextLine(new TextChunk("we look for an agent"));
+        TextLine line2 = new TextLine(new TextChunk("—a person, situation, another event"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line1, line2), OutputType.JSON);
+
+        assertEquals("we look for an agent—a person, situation, another event", text);
+    }
+
+    /**
+     * A suspended hyphen right before "and"/"or" at a line break ("seventeenth-" wrapping
+     * onto "and eighteenth-century") is elliptical coordination, not a broken word: the
+     * dictionary lookup correctly finds "seventeenthand" isn't a real word and keeps the
+     * hyphen, but unlike a genuine compound word's own hyphen ("well-intentioned"), a space
+     * still belongs right after it - "seventeenth- and eighteenth-century", not
+     * "seventeenth-and eighteenth-century". Found broken (missing the space) in real output
+     * from "Read, Reason, Write".
+     */
+    @Test
+    void testGetTextFromLines_addsASpaceAfterASuspendedHyphenBeforeACoordinator() {
+        TextLine line1 = new TextLine(new TextChunk("the shortcomings of seventeenth-"));
+        TextLine line2 = new TextLine(new TextChunk("and eighteenth-century dictionaries"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line1, line2), OutputType.JSON);
+
+        assertEquals("the shortcomings of seventeenth- and eighteenth-century dictionaries", text);
+    }
+
+    /**
+     * Moving the wordlist to a bigger SCOWL tier (needed for real words like
+     * "systemically"/"counterarguments" below, absent from the smaller tier this session
+     * first shipped) surfaces a real word the dictionary itself disagrees with convention
+     * about: "posttraumatic" (solid) is accepted usage, but "post-traumatic" (hyphenated)
+     * is what running prose actually writes - eliding the hyphen because the solid form
+     * happens to also be "a real word" would be correct by the dictionary's letter and
+     * wrong in practice. DUAL_SPELLING_KEEP_HYPHENATED overrides the lookup for exactly
+     * this one, evidence-based case.
+     */
+    @Test
+    void testGetTextFromLines_keepsAHyphenTheDictionaryWouldOtherwiseElideForAKnownDualSpelling() {
+        TextLine line1 = new TextLine(new TextChunk("likely to produce post-"));
+        TextLine line2 = new TextLine(new TextChunk("traumatic symptoms"));
+
+        String text = GeneratorUtils.getTextFromLines(List.of(line1, line2), OutputType.JSON);
+
+        assertEquals("likely to produce post-traumatic symptoms", text);
+    }
+
+    /**
+     * Real words missing from the wordlist's original, smaller SCOWL tier - found broken
+     * as "sys-temically" and "counterargu-ments" in real output from "Read, Reason, Write".
+     * Neither has any legitimate hyphenated form to fall back to (unlike
+     * "post-traumatic"/"posttraumatic" above), so the bigger tier's coverage is a strict
+     * improvement here, not a new ambiguity.
+     */
+    @Test
+    void testGetTextFromLines_elidesHyphenMinusForRealWordsMissingFromTheSmallerWordlistTier() {
+        TextLine sysLine1 = new TextLine(new TextChunk("policy responses were inadequate, sys-"));
+        TextLine sysLine2 = new TextLine(new TextChunk("temically so"));
+        assertEquals("policy responses were inadequate, systemically so",
+            GeneratorUtils.getTextFromLines(List.of(sysLine1, sysLine2), OutputType.JSON));
+
+        TextLine counterLine1 = new TextLine(new TextChunk("Many counterargu-"));
+        TextLine counterLine2 = new TextLine(new TextChunk("ments are position papers"));
+        assertEquals("Many counterarguments are position papers",
+            GeneratorUtils.getTextFromLines(List.of(counterLine1, counterLine2), OutputType.JSON));
     }
 
     /**
