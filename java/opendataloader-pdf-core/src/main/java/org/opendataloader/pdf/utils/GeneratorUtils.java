@@ -108,13 +108,24 @@ public class GeneratorUtils {
      * ("2)  Variazione..." for a chunk boundary that already fell right after "2) "),
      * invisible to a whitespace-collapsing comparison but not to an exact one. A space is
      * only missing, and only then added, when neither side already has one.
+     *
+     * <p>A hyphen-minus or em dash ending the accumulated text is the same case a step
+     * further: a compound word's own hyphen can fall on a chunk boundary too ("well-" +
+     * "intentioned", split by a style change right at the hyphen, not a line wrap), and
+     * unlike an ordinary letter, a hyphen or dash already reads as flush against what
+     * follows - inserting a space there would read "well- intentioned", not
+     * "well-intentioned". No word boundary needs a space right after one, the way
+     * {@link #appendLineJoin} already treats them at a line break.
      */
     public static boolean needsChunkSeparator(StringBuilder stringBuilder, String nextValue) {
         if (stringBuilder.length() == 0 || nextValue.isEmpty()) {
             return false;
         }
-        return !Character.isWhitespace(stringBuilder.charAt(stringBuilder.length() - 1))
-            && !Character.isWhitespace(nextValue.charAt(0));
+        char last = stringBuilder.charAt(stringBuilder.length() - 1);
+        if (last == HYPHEN_MINUS || last == SOFT_HYPHEN || last == EM_DASH) {
+            return false;
+        }
+        return !Character.isWhitespace(last) && !Character.isWhitespace(nextValue.charAt(0));
     }
 
     /**

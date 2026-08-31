@@ -110,6 +110,23 @@ class MarkdownListTest {
             .isEqualTo("- 0.24% of all crypto transactions were linked to illicit activities.");
     }
 
+    /**
+     * The geometry layer doesn't always report the delimiter as part of the label - a
+     * span of just "0" (labelLength 1) reads the same way as "0." (labelLength 2) once
+     * {@code readLabel} trims it, but the digit-immediately-after check alone doesn't
+     * reach it: the character right after a length-1 label is the delimiter itself, not
+     * a digit, so that check alone passed it through. "0." became the marker and ".24%"
+     * was left dangling as the item's text - "0. .24% of all crypto...". Regression test
+     * for that gap: readLabel now also looks at what follows the label's own leading
+     * digit run, not just the reported span, and catches this case too.
+     */
+    @Test
+    void aDecimalNumberOpeningAParagraphIsNotMistakenForALabelEvenWithoutTheDelimiterInSpan() {
+        assertThat(renderItem(NumberingStyleNames.ARABIC_NUMBERS,
+            "0.24% of all crypto transactions were linked to illicit activities.", 1))
+            .isEqualTo("- 0.24% of all crypto transactions were linked to illicit activities.");
+    }
+
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
         "3.14 is pi|- 3.14 is pi",
@@ -118,6 +135,17 @@ class MarkdownListTest {
     })
     void otherDecimalNumbersAreNotMistakenForALabelEither(String itemText, String expected) {
         assertThat(renderItem(NumberingStyleNames.ARABIC_NUMBERS, itemText, 2)).isEqualTo(expected);
+    }
+
+    /** Same set, but with the delimiter left out of the reported span (labelLength 1). */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "3.14 is pi|- 3.14 is pi",
+        "1.5 million people|- 1.5 million people",
+        "2.0 out of 5 stars|- 2.0 out of 5 stars"
+    })
+    void otherDecimalNumbersAreNotMistakenForALabelEitherWithoutTheDelimiterInSpan(String itemText, String expected) {
+        assertThat(renderItem(NumberingStyleNames.ARABIC_NUMBERS, itemText, 1)).isEqualTo(expected);
     }
 
     @Test
