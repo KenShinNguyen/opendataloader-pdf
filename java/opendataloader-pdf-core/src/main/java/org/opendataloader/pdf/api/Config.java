@@ -73,7 +73,13 @@ public class Config {
     private boolean useStructTree = false;
     private boolean useHTMLInMarkdown = false;
     private boolean addImageToMarkdown = false;
-    private String replaceInvalidChars = " ";
+    // U+FFFD (Unicode replacement character) rather than a plain space: a glyph
+    // whose font has no ToUnicode mapping for it (common in badly-subsetted fonts
+    // used for vector map/chart labels) is unrecoverable via text extraction, but
+    // silently substituting a space fabricates a word boundary that was never
+    // there - "TERRITORIES" with two such glyphs reads as "TERR TOR ES", three
+    // words instead of one. "�" makes the gap visible without doing that.
+    private String replaceInvalidChars = "�";
     private String outputFolder;
     private String tableMethod = TABLE_METHOD_DEFAULT;
     private String readingOrder = READING_ORDER_XYCUT;

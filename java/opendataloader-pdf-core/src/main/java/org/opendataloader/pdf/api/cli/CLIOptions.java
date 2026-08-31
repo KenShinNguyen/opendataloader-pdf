@@ -102,7 +102,9 @@ public class CLIOptions {
 
     // ===== Replace Invalid Chars =====
     private static final String REPLACE_INVALID_CHARS_LONG_OPTION = "replace-invalid-chars";
-    private static final String REPLACE_INVALID_CHARS_DESC = "Replacement character for invalid/unrecognized characters. Default: space";
+    private static final String REPLACE_INVALID_CHARS_DESC = "Replacement character for invalid/unrecognized characters "
+            + "(a glyph whose font has no Unicode mapping - unrecoverable without OCR). Default: the Unicode replacement "
+            + "character (�), so a missing glyph does not read as a fabricated word boundary the way a space would.";
 
     // ===== Set space ratio =====
     private static final String SPACE_RATIO_LONG_OPTION = "space-ratio";
@@ -254,7 +256,7 @@ public class CLIOptions {
             new OptionDefinition(CONTENT_SAFETY_OFF_LONG_OPTION, null, "string", null, CONTENT_SAFETY_OFF_DESC, true),
             new OptionDefinition(SANITIZE_LONG_OPTION, null, "boolean", false, SANITIZE_DESC, true),
             new OptionDefinition(KEEP_LINE_BREAKS_LONG_OPTION, null, "boolean", false, KEEP_LINE_BREAKS_DESC, true),
-            new OptionDefinition(REPLACE_INVALID_CHARS_LONG_OPTION, null, "string", " ", REPLACE_INVALID_CHARS_DESC,
+            new OptionDefinition(REPLACE_INVALID_CHARS_LONG_OPTION, null, "string", "�", REPLACE_INVALID_CHARS_DESC,
                     true),
             new OptionDefinition(USE_STRUCT_TREE_LONG_OPTION, null, "boolean", false, USE_STRUCT_TREE_DESC, true),
             new OptionDefinition(TABLE_METHOD_LONG_OPTION, null, "string", "default", TABLE_METHOD_DESC, true),

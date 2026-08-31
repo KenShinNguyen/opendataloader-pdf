@@ -37,6 +37,20 @@ class ConfigTest {
         assertEquals(Config.READING_ORDER_XYCUT, config.getReadingOrder());
     }
 
+    /**
+     * A glyph whose font has no ToUnicode mapping - unrecoverable via text extraction,
+     * common in badly-subsetted fonts used for vector map/chart labels - must not
+     * default to a plain space: that fabricates a word boundary that was never there
+     * ("TERRITORIES" with two such glyphs would read as "TERR TOR ES", three words
+     * instead of one). The Unicode replacement character makes the gap visible instead.
+     */
+    @Test
+    void testDefaultReplaceInvalidCharsIsTheUnicodeReplacementCharacterNotASpace() {
+        Config config = new Config();
+
+        assertEquals("�", config.getReplaceInvalidChars());
+    }
+
     @Test
     void testSetImageOutputAffectsIsEmbedImages() {
         Config config = new Config();
