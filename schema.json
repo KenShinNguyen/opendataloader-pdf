@@ -106,6 +106,7 @@
     "contentElement": {
       "oneOf": [
         { "$ref": "#/$defs/paragraph" },
+        { "$ref": "#/$defs/annotation" },
         { "$ref": "#/$defs/heading" },
         { "$ref": "#/$defs/caption" },
         { "$ref": "#/$defs/table" },
@@ -124,6 +125,24 @@
           "properties": {
             "type": { "const": "paragraph" }
           }
+        }
+      ]
+    },
+    "annotation": {
+      "allOf": [
+        { "$ref": "#/$defs/baseElement" },
+        { "$ref": "#/$defs/textProperties" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "annotation" },
+            "position": {
+              "type": "string",
+              "enum": ["left", "right"],
+              "description": "Which margin the annotation sits in, relative to the page's body text column"
+            }
+          },
+          "required": ["position"]
         }
       ]
     },
